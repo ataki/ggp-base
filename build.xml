@@ -161,5 +161,8 @@
             </fileset>
             <report format="frames" todir="${junit.output.dir}"/>
         </junitreport>
-    </target>
+	</target>
+	<target name="path">
+		<echo>${toString:GGP_Base.classpath}</echo>
+	</target>
 </project>
