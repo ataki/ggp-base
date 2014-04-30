@@ -3,6 +3,8 @@ package org.ggp.base.player.gamer.statemachine.heuristic;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.*;
+import java.util.Random;
 
 import org.ggp.base.apps.player.detail.DetailPanel;
 import org.ggp.base.apps.player.detail.SimpleDetailPanel;
@@ -22,7 +24,7 @@ import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class HeuristicGamer extends StateMachineGamer
 {
-    private int depth_limit = 5;
+    private int depth_limit = 4;
     private List<Role> gameRoles = null;
     private Map<Role, Integer> roleIndices = null;
     private Role opponent = null;
@@ -77,20 +79,15 @@ public class HeuristicGamer extends StateMachineGamer
         // Sample gamers do no game previewing.
     }
 
-    /*
-     * This function is called at the start of each round
-     * You are required to return the Move your player will play
-     * before the timeout.
-     *
-     */
-    @Override
-    public Move stateMachineSelectMove(long timeout)
-        throws TransitionDefinitionException, MoveDefinitionException,
-                          GoalDefinitionException
-    {
-        // We get the current start time
-        long start = System.currentTimeMillis();
+    private Move getRandomMove() throws TransitionDefinitionException, MoveDefinitionException,
+                          GoalDefinitionException {
+        List<Move> moves = getStateMachine().getLegalMoves(getCurrentState(), getRole());
+		return (moves.get(new Random().nextInt(moves.size())));
+    }
 
+
+    private Move getMove() throws TransitionDefinitionException, MoveDefinitionException,
+                          GoalDefinitionException{
         if (gameRoles == null)
             gameRoles = getStateMachine().getRoles();
 
@@ -124,6 +121,49 @@ public class HeuristicGamer extends StateMachineGamer
 
         System.out.println("MAX SCORE: "+max);
 
+        if (max == 0) {
+            return getRandomMove();
+        }
+
+        return selection;
+    }
+
+    /*
+     * This function is called at the start of each round
+     * You are required to return the Move your player will play
+     * before the timeout.
+     *
+     */
+    @Override
+    public Move stateMachineSelectMove(long timeout)
+        throws TransitionDefinitionException, MoveDefinitionException,
+                          GoalDefinitionException
+    {
+
+        // We get the current start time
+        long start = System.currentTimeMillis();
+
+        System.out.println("TIMEOUT: "+(timeout-start));
+
+        ExecutorService exec = Executors.newSingleThreadExecutor();
+        Future<Move> f = exec.submit(new Callable<Move>() {
+            public Move call() throws TransitionDefinitionException, MoveDefinitionException,
+                          GoalDefinitionException {
+                return getMove();
+            }
+        });
+
+        Move selection = null;
+
+        try {
+            selection = f.get(timeout - start - 100, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            System.out.println("getMove() timed-out");
+            exec.shutdownNow();
+            selection = getRandomMove();
+        } catch (Exception e) {
+            System.out.println("getMove() was interrupted");
+        }
         // We get the end time
         // It is mandatory that stop<timeout
         long stop = System.currentTimeMillis();
@@ -134,7 +174,8 @@ public class HeuristicGamer extends StateMachineGamer
          * moves, selection, stop and start defined in the same way as
          * this example, and copy-paste these two lines in your player
          */
-        notifyObservers(new GamerSelectedMoveEvent(moves, selection, stop - start));
+        notifyObservers(new GamerSelectedMoveEvent(
+                    getStateMachine().getLegalMoves(getCurrentState(), getRole()), selection, stop - start));
         return selection;
     }
 
@@ -160,7 +201,7 @@ public class HeuristicGamer extends StateMachineGamer
             if (getStateMachine().isTerminal(state)) {
                 return getStateMachine().getGoal(state, getRole());
             }
-            return 0;
+            return getStateMachine().getGoal(state, getRole());
         }
 
         List<Move> moves = getStateMachine().getLegalMoves(state, getRole());
@@ -190,12 +231,11 @@ public class HeuristicGamer extends StateMachineGamer
             return maxScore(getStateMachine().getNextState(state, curMoves), alpha, beta, level+1);
         }
 
-        List<Move> moves = getStateMachine().getLegalMoves(state, opponent);
+        List<List<Move>> moves = getStateMachine().getLegalJointMoves(state, getRole(), playerAction);
 
-        for (Move prospect : moves) {
-            curMoves.add(roleIndices.get(opponent), prospect);
+        for (List<Move> prospect : moves) {
             int score =
-              maxScore(getStateMachine().getNextState(state, curMoves), alpha, beta, level+1);
+              maxScore(getStateMachine().getNextState(state, prospect), alpha, beta, level+1);
 
             beta = Math.min(beta, score);
 
