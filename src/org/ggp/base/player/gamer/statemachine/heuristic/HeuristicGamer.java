@@ -22,12 +22,18 @@ import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
+import org.ggp.base.util.logging.GamerLogger;
+
 public class HeuristicGamer extends StateMachineGamer
 {
     private int depth_limit = 4;
     private List<Role> gameRoles = null;
     private Map<Role, Integer> roleIndices = null;
     private Role opponent = null;
+
+    private Move bestMoveSoFar = null;
+    
+    private long timeout_buffer = 500; // In milliseconds
 
     @Override
     public void stateMachineMetaGame(long timeout) throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException
@@ -116,6 +122,7 @@ public class HeuristicGamer extends StateMachineGamer
             if (score >= max) {
                 max = score;
                 selection = prospect;
+                bestMoveSoFar = prospect;
             }
         }
 
@@ -143,6 +150,7 @@ public class HeuristicGamer extends StateMachineGamer
         // We get the current start time
         long start = System.currentTimeMillis();
 
+        bestMoveSoFar = null;
         System.out.println("TIMEOUT: "+(timeout-start));
 
         ExecutorService exec = Executors.newSingleThreadExecutor();
@@ -156,13 +164,21 @@ public class HeuristicGamer extends StateMachineGamer
         Move selection = null;
 
         try {
-            selection = f.get(timeout - start - 100, TimeUnit.MILLISECONDS);
+            selection = f.get(timeout - start - timeout_buffer, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             System.out.println("getMove() timed-out");
             exec.shutdownNow();
-            selection = getRandomMove();
+            //selection = getRandomMove();
+            if (bestMoveSoFar == null) {
+                selection = getRandomMove();
+            } else {
+                selection = bestMoveSoFar;
+            }
+            bestMoveSoFar = null;
         } catch (Exception e) {
             System.out.println("getMove() was interrupted");
+		    GamerLogger.logStackTrace("GamePlayer", e);
+            selection = getRandomMove();
         }
         // We get the end time
         // It is mandatory that stop<timeout
