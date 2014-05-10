@@ -144,8 +144,8 @@
             <classpath refid="GGP_Base.classpath"/>
         </junit>
     </target>
-    <target name="PlayerPanel">
-        <java classname="org.ggp.base.apps.player.PlayerPanel" failonerror="true" fork="yes">
+    <target name="Player">
+        <java classname="org.ggp.base.apps.player.Player" failonerror="true" fork="yes">
             <classpath refid="GGP_Base.classpath"/>
         </java>
     </target>
