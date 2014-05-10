@@ -6,7 +6,17 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.Random;
 
+import javax.swing.JPanel;
+import java.awt.GridBagLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.GridBagConstraints;
+import java.awt.Insets;
+import javax.swing.JTextField;
+import javax.swing.JLabel;
+
 import org.ggp.base.apps.player.detail.DetailPanel;
+import org.ggp.base.apps.player.config.ConfigPanel;
 import org.ggp.base.apps.player.detail.SimpleDetailPanel;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
@@ -33,7 +43,46 @@ public class MCGamer extends StateMachineGamer
 
     private Move bestMoveSoFar = null;
     
-    private long timeout_buffer = 500; // In milliseconds
+    private Long timeout_buffer = 500L; // In milliseconds
+
+    private Integer numProbes = 20;
+
+    @SuppressWarnings("serial")
+    private class MCConfigPanel extends ConfigPanel implements ActionListener {
+
+        private final JTextField numProbesField;
+        private final JTextField timeoutBufferField;
+
+        private final MCGamer gamer;
+
+        public MCConfigPanel(MCGamer g) {
+            super(new GridBagLayout());
+
+            this.gamer = g;
+            
+            numProbesField = new JTextField(gamer.numProbes.toString());
+            timeoutBufferField = new JTextField(gamer.timeout_buffer.toString());
+
+            numProbesField.addActionListener(this);
+            timeoutBufferField.addActionListener(this);
+
+            this.add(new JLabel("Number of probes:"), new GridBagConstraints(0, 0, 1, 1, 0.0, 0.0, GridBagConstraints.EAST, GridBagConstraints.NONE, new Insets(20, 5, 5, 5), 5, 5));
+            this.add(numProbesField, new GridBagConstraints(1, 0, 1, 1, 1.0, 0.0, GridBagConstraints.CENTER, GridBagConstraints.HORIZONTAL, new Insets(20, 5, 5, 5), 5, 5));
+            this.add(new JLabel("Timeout Buffer:"), new GridBagConstraints(0, 1, 1, 1, 0.0, 0.0, GridBagConstraints.EAST, GridBagConstraints.NONE, new Insets(5, 5, 5, 5), 5, 5));
+            this.add(timeoutBufferField, new GridBagConstraints(1, 1, 1, 1, 1.0, 0.0, GridBagConstraints.CENTER, GridBagConstraints.BOTH, new Insets(5, 5, 5, 5), 5, 5));
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            
+            if (e.getSource() == numProbesField) {
+                gamer.numProbes = Integer.valueOf(numProbesField.getText());
+            } else if (e.getSource() == timeoutBufferField) {
+                gamer.timeout_buffer = Long.valueOf(timeoutBufferField.getText());
+            }
+
+        }
+    }
 
     @Override
     public void stateMachineMetaGame(long timeout) throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException
@@ -56,6 +105,11 @@ public class MCGamer extends StateMachineGamer
     @Override
     public DetailPanel getDetailPanel() {
         return new SimpleDetailPanel();
+    }
+
+    @Override
+    public ConfigPanel getConfigPanel() {
+        return new MCConfigPanel(this);
     }
 
     @Override
@@ -226,7 +280,7 @@ public class MCGamer extends StateMachineGamer
         }
 
         if (level >= depth_limit) {
-			return montecarlo(state, 20);
+			return montecarlo(state, numProbes);
         }
 
         List<Move> moves = getStateMachine().getLegalMoves(state, getRole());
