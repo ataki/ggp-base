@@ -1,6 +1,7 @@
 package org.ggp.base.player.gamer.statemachine.montecarlo;
 
 import java.util.List;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
@@ -209,28 +210,14 @@ public class MCTSGamer extends StateMachineGamer
 		Map<Move, List<MachineState>> nextStates = getStateMachine().getNextStates(node.state, getRole());
 
 		for (Map.Entry<Move,List<MachineState>> entry: nextStates.entrySet()) {
-			MCTSNode child = null;
-			if (opponent == null) {
-				assert entry.getValue().size() == 1;
-				child = new MCTSNode(entry.getValue().get(0),node,entry.getKey());
-			} else {
-				MachineState selection = null;
-				double score = 0.0;
-				if (moveSelection == 0) {
-					for (MachineState s : entry.getValue()) {
-						double opponentGoal = getStateMachine().getGoal(s,opponent);
-						if (opponentGoal >= score) {
-							selection = s;
-							score = opponentGoal;
-						}
-					}
-				}
-
-				child = new MCTSNode(selection,node,entry.getKey());
+			MCTSNode child         = null;
+			MachineState selection = null;
+			Move 	 parentMove    = entry.getKey();
+			for (MachineState s : entry.getValue()) {
+				child = new MCTSNode(s,node,parentMove);
+				node.children.add(child);
+				nodeMap.put(child.state, child);
 			}
-
-			nodeMap.put(child.state, child);
-			node.children.add(child);
 		}
 	}
 
@@ -239,10 +226,19 @@ public class MCTSGamer extends StateMachineGamer
 		MCTSNode current = leaf;
 
 		while (current != null) {
+			Move parentMove = current.parentMove;
 			current.visits++;
 			current.totalScore += score;
 
 			current = current.parent;
+
+			if (current != null) {
+				for (MCTSNode child : current.children) {
+					double utility = child.totalScore/child.visits;
+					if (child.parentMove == parentMove && utility < score)
+						score = utility;
+				}
+			}
 		}
 	}
 
@@ -261,6 +257,10 @@ public class MCTSGamer extends StateMachineGamer
 		if (nodeMap == null) {
 			nodeMap = new HashMap<MachineState, MCTSNode>();
 		}
+
+		List<Move> moves = getStateMachine().getLegalMoves(getCurrentState(),getRole());
+		if (moves.size() == 1)
+			return moves.get(0);
 
 		MCTSNode currentNode = nodeMap.get(getCurrentState());
 		if (currentNode == null) {
@@ -287,11 +287,25 @@ public class MCTSGamer extends StateMachineGamer
 		double bestScore = 0.0;
 		Move   bestMove  = null;
 
+		List<Move> moves = getStateMachine().getLegalMoves(current.state,getRole());
+		double[] scores = new double[moves.size()];
+
+		for (int i=0; i<moves.size(); i++)
+			scores[i] = Double.MAX_VALUE;
+
 		for (MCTSNode child : current.children) {
 			double score = child.totalScore/child.visits;
-			if (score > bestScore) {
-				bestScore = score;
-				bestMove = child.parentMove;
+			int idx = moves.indexOf(child.parentMove);
+			if (score < scores[idx]) {
+				scores[idx] = score;
+			}
+		}
+
+		System.out.println("SCORES: "+Arrays.toString(scores));
+		for (int i=0; i<moves.size(); i++) {
+			if (scores[i] >= bestScore) {
+				bestScore = scores[i];
+				bestMove = moves.get(i);
 			}
 		}
 
