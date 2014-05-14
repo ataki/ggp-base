@@ -51,29 +51,50 @@ public class MCTSGamer extends StateMachineGamer
 
 	private HashMap<MachineState, MCTSNode> nodeMap = null;
 
-	private Integer moveSelection = 0;
+	private Integer moveSelection = 1;
+
+	private Double memoryThreshold = 80.0;
+
+	private boolean expandNewNodes = true;
 
 	private class MCTSNode {
 		MachineState state;
 		int visits;
 		double totalScore;
+		double opponentScore;
 		ArrayList<MCTSNode> children;
 		MCTSNode parent;
 		Move 	 parentMove;
 
-		public MCTSNode(MachineState s, int v, double score, MCTSNode p, Move m) {
+		public MCTSNode(MachineState s, int v, double score, double oScore, MCTSNode p, Move m) {
 			this.state = s;
 			this.visits = v;
 			this.totalScore = score;
+			this.opponentScore = oScore;
 			this.children = new ArrayList<MCTSNode>();
 			this.parent = p;
 			this.parentMove = m;
 		}
 
 		public MCTSNode(MachineState s, MCTSNode p, Move m) {
-			this(s,0,0.0,p,m);
+			this(s,0,0.0,0.0,p,m);
 		}
 
+		public String toString() {
+			StringBuilder sb = new StringBuilder();
+			sb.append("State: "+state+"\n");
+			sb.append("Visits: "+visits+"\n");
+			sb.append("TotalScore: "+totalScore+"\t"+"oScore:"+opponentScore+"\n");
+			sb.append("Num children: "+children.size()+"\n");
+			sb.append("Parent Move: "+parentMove+"\n");
+
+			return sb.toString();
+		}
+
+	}
+
+	private void log(String s) {
+		GamerLogger.log("MCTSGamer", s);
 	}
 
     @SuppressWarnings("serial")
@@ -81,6 +102,7 @@ public class MCTSGamer extends StateMachineGamer
 
         private final JTextField numProbesField;
         private final JTextField timeoutBufferField;
+		private final JTextField memoryThresholdField;
 
         private final MCTSGamer gamer;
 
@@ -91,26 +113,40 @@ public class MCTSGamer extends StateMachineGamer
             
             numProbesField = new JTextField(gamer.numProbes.toString());
             timeoutBufferField = new JTextField(gamer.timeout_buffer.toString());
+        	memoryThresholdField = new JTextField(gamer.memoryThreshold.toString());
 
             numProbesField.addActionListener(this);
             timeoutBufferField.addActionListener(this);
+			memoryThresholdField.addActionListener(this);
 
             this.add(new JLabel("Number of probes:"), new GridBagConstraints(0, 0, 1, 1, 0.0, 0.0, GridBagConstraints.EAST, GridBagConstraints.NONE, new Insets(20, 5, 5, 5), 5, 5));
             this.add(numProbesField, new GridBagConstraints(1, 0, 1, 1, 1.0, 0.0, GridBagConstraints.CENTER, GridBagConstraints.HORIZONTAL, new Insets(20, 5, 5, 5), 5, 5));
             this.add(new JLabel("Timeout Buffer:"), new GridBagConstraints(0, 1, 1, 1, 0.0, 0.0, GridBagConstraints.EAST, GridBagConstraints.NONE, new Insets(5, 5, 5, 5), 5, 5));
             this.add(timeoutBufferField, new GridBagConstraints(1, 1, 1, 1, 1.0, 0.0, GridBagConstraints.CENTER, GridBagConstraints.BOTH, new Insets(5, 5, 5, 5), 5, 5));
+            this.add(new JLabel("Memory Threshold(%):"), new GridBagConstraints(0, 2, 1, 1, 0.0, 0.0, GridBagConstraints.EAST, GridBagConstraints.NONE, new Insets(5, 5, 5, 5), 5, 5));
+            this.add(memoryThresholdField, new GridBagConstraints(1, 2, 1, 1, 1.0, 0.0, GridBagConstraints.CENTER, GridBagConstraints.BOTH, new Insets(5, 5, 5, 5), 5, 5));
+
         }
 
         @Override
         public void actionPerformed(ActionEvent e) {
             
-            if (e.getSource() == numProbesField) {
-                gamer.numProbes = Integer.valueOf(numProbesField.getText());
-            } else if (e.getSource() == timeoutBufferField) {
-                gamer.timeout_buffer = Long.valueOf(timeoutBufferField.getText());
-            }
+			try {
+				if (e.getSource() == numProbesField) {
+					gamer.numProbes = Integer.valueOf(numProbesField.getText());
+				} else if (e.getSource() == timeoutBufferField) {
+					gamer.timeout_buffer = Long.valueOf(timeoutBufferField.getText());
+				} else if (e.getSource() == memoryThresholdField) {
+					System.out.println("Updating Memory Threshold");
+					gamer.memoryThreshold = Double.valueOf(memoryThresholdField.getText());
+				}
+			} catch (Exception ex) {
+				System.out.println("Error when updating configuration; Changes have not been saved.");
+				ex.printStackTrace();
+			}
 
         }
+
     }
 
     @Override
@@ -177,12 +213,13 @@ public class MCTSGamer extends StateMachineGamer
 		MCTSNode current = root;
 
 		while (true) {
+
 			if (current.visits == 0 || getStateMachine().isTerminal(current.state))
-				return current;
+				return expandNewNodes?current:(current.parent==null?current:current.parent);
 
 			for (MCTSNode child : current.children) {
 				if (child.visits == 0)
-					return child;
+					return expandNewNodes?child:current;
 			}
 
 			double score = 0.0;
@@ -193,6 +230,7 @@ public class MCTSGamer extends StateMachineGamer
 				if (newScore >= score) {
 					score = newScore;
 					result = child;
+					assert child.parent == current;
 				}
 			}
 
@@ -204,6 +242,9 @@ public class MCTSGamer extends StateMachineGamer
 	private void expand(MCTSNode node) throws MoveDefinitionException, TransitionDefinitionException,
 			GoalDefinitionException {
 
+		//log("************************EXPAND************************\n");
+		//log("Expanding Node: "+node.toString());
+
 		if (getStateMachine().isTerminal(node.state))
 			return;
 
@@ -213,30 +254,73 @@ public class MCTSGamer extends StateMachineGamer
 			MCTSNode child         = null;
 			MachineState selection = null;
 			Move 	 parentMove    = entry.getKey();
+
 			for (MachineState s : entry.getValue()) {
-				child = new MCTSNode(s,node,parentMove);
-				node.children.add(child);
-				nodeMap.put(child.state, child);
+				Map<Move, List<MachineState>> nextOStates = getStateMachine().getNextStates(s,opponent);
+
+				for (Map.Entry<Move,List<MachineState>> oEntry : nextOStates.entrySet()) {
+					for (MachineState oS : oEntry.getValue()) {
+						child = nodeMap.get(oS);
+						if (child == null) {
+							child = new MCTSNode(oS,node,parentMove);
+							nodeMap.put(child.state, child);
+						}
+						node.children.add(child);
+						//log("Adding new child: "+child.toString());
+					}
+				}
+
+
 			}
 		}
+
+		//log("**********************************************************\n");
 	}
 
-	private void backpropagate(MCTSNode leaf, double score) {
+	private void backpropagate(MCTSNode leaf, double [] scores) {
 
 		MCTSNode current = leaf;
+		double   currentScore = 0.0;
+		double 	 currentOScore = 0.0;
+
+		int pIndex = roleIndices.get(getRole());
+		int oIndex = 0;
+		if (opponent != null) {
+			oIndex = roleIndices.get(opponent);
+		}
 
 		while (current != null) {
 			Move parentMove = current.parentMove;
 			current.visits++;
-			current.totalScore += score;
+
+			current.totalScore += scores[pIndex];
+			currentScore = current.totalScore / current.visits;
+			
+			if (opponent != null) {
+				current.opponentScore += scores[oIndex];
+				currentOScore = current.opponentScore / current.visits;
+			}
 
 			current = current.parent;
 
-			if (current != null) {
-				for (MCTSNode child : current.children) {
-					double utility = child.totalScore/child.visits;
-					if (child.parentMove == parentMove && utility < score)
-						score = utility;
+			if (opponent != null) {
+				if (current != null) {
+					for (MCTSNode child : current.children) {
+						double utility = child.totalScore/child.visits;
+						double oUtility = child.opponentScore/child.visits;
+
+						if (moveSelection == 0) {
+							if (child.parentMove == parentMove && child.visits != 0 && utility < currentScore) {
+								scores[pIndex] = utility;
+								scores[oIndex] = oUtility;
+							}
+						} else if (moveSelection == 1) {
+							if (child.parentMove == parentMove && child.visits != 0 && oUtility > currentOScore) {
+								scores[pIndex] = utility;
+								scores[oIndex] = oUtility;
+							}
+						}
+					}
 				}
 			}
 		}
@@ -270,12 +354,31 @@ public class MCTSGamer extends StateMachineGamer
 		currentNode.parent = null;
 		currentNode.parentMove = null;
 
+		double usedPercent=(double)(Runtime.getRuntime().totalMemory()
+				-Runtime.getRuntime().freeMemory())*100.0/Runtime.getRuntime().maxMemory();
+
+		System.out.println("Used Memory: "+usedPercent+"%");
+		System.out.println("MEMORY THRESHOLD: "+memoryThreshold);
+		expandNewNodes = true;
+
+		if (usedPercent >= memoryThreshold) {
+			System.out.println("Memory threshold exceeded - new states will not be expanded");
+			expandNewNodes = false;
+		}
+
 		while (true) {
 			MCTSNode selection = select(currentNode);
-			expand(selection);
 
-			double score = depthCharge(selection.state);
-			backpropagate(selection, score);
+			if (expandNewNodes)
+				expand(selection);
+
+			List<Integer> scoresList = depthCharge(selection.state);
+
+			double [] scores = new double[scoresList.size()];
+			for (int i=0; i<scoresList.size(); i++)
+				scores[i] = scoresList.get(i);
+
+			backpropagate(selection, scores);
 		}
 
     }
@@ -284,24 +387,54 @@ public class MCTSGamer extends StateMachineGamer
 
 		MCTSNode current = nodeMap.get(getCurrentState());
 
-		double bestScore = 0.0;
+		double bestScore = Double.NEGATIVE_INFINITY;
 		Move   bestMove  = null;
 
 		List<Move> moves = getStateMachine().getLegalMoves(current.state,getRole());
-		double[] scores = new double[moves.size()];
+		double[] pScores = new double[moves.size()];
+		double[] scores  = new double[moves.size()];
 
+		for (int i=0; i<moves.size(); i++) {
+			pScores[i] = Double.MAX_VALUE;
+			scores[i]  = Double.NEGATIVE_INFINITY;
+		}
+
+
+		double[] oScores = new double[moves.size()];
 		for (int i=0; i<moves.size(); i++)
-			scores[i] = Double.MAX_VALUE;
+			oScores[i] = Double.NEGATIVE_INFINITY;
 
+		log("**********************Best Move******************************\n");
+		GamerLogger.log("MCTSGamer", "Current State: "+current.state+"\n");
+		GamerLogger.log("MCTSGamer", "Children:\n");
 		for (MCTSNode child : current.children) {
+
+			GamerLogger.log("MCTSGamer", child.toString());
+
 			double score = child.totalScore/child.visits;
+			double oScore = child.opponentScore/child.visits;
 			int idx = moves.indexOf(child.parentMove);
-			if (score < scores[idx]) {
-				scores[idx] = score;
+
+			if (moveSelection == 0) {
+				if (child.visits > 5 && score < pScores[idx]) {
+					pScores[idx] = score;
+					scores[idx] = score;
+				}
+			} else if (moveSelection == 1) {
+				if (child.visits > 5 && oScore > oScores[idx]) {
+					oScores[idx] = oScore;
+					scores[idx] = score;
+				}
 			}
 		}
 
-		System.out.println("SCORES: "+Arrays.toString(scores));
+		log("***********************************************************************\n");
+
+		for (int i=0; i<moves.size(); i++) {
+			System.out.print("M: "+moves.get(i)+" SC: "+scores[i]+"\t");
+		}
+
+		System.out.println();
 		for (int i=0; i<moves.size(); i++) {
 			if (scores[i] >= bestScore) {
 				bestScore = scores[i];
@@ -358,6 +491,8 @@ public class MCTSGamer extends StateMachineGamer
 		    GamerLogger.logStackTrace("GamePlayer", e);
             selection = getRandomMove();
         }
+
+		nodeMap = null;
         // We get the end time
         // It is mandatory that stop<timeout
         long stop = System.currentTimeMillis();
@@ -383,13 +518,13 @@ public class MCTSGamer extends StateMachineGamer
         return null;
     }
 
-	private double depthCharge(MachineState s) {
+	private List<Integer> depthCharge(MachineState s) {
 		try {
 			MachineState fs = getStateMachine().performDepthCharge(s,null);
-			return getStateMachine().getGoal(fs, getRole());
+			return getStateMachine().getGoals(fs);
 		} catch (Exception e) {
 			e.printStackTrace();
-			return 0;
+			return null;
 		}
 	}
 
