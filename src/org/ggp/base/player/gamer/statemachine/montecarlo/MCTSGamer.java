@@ -205,7 +205,7 @@ public class MCTSGamer extends StateMachineGamer
 
 	private double utility(MCTSNode node) {
 		double averageScore = node.totalScore / node.visits;
-		return averageScore + Math.sqrt(2*Math.log(node.parent.visits)/node.visits);
+		return averageScore + 50*Math.sqrt(2*Math.log(node.parent.visits)/node.visits);
 	}
 
 	private MCTSNode select(MCTSNode root) {
@@ -230,7 +230,10 @@ public class MCTSGamer extends StateMachineGamer
 				if (newScore >= score) {
 					score = newScore;
 					result = child;
-					assert child.parent == current;
+					//assert child.parent == current;
+					// A node may have multiple parents - visit the right one
+					// when back propagating.
+					child.parent = current;
 				}
 			}
 
@@ -256,21 +259,13 @@ public class MCTSGamer extends StateMachineGamer
 			Move 	 parentMove    = entry.getKey();
 
 			for (MachineState s : entry.getValue()) {
-				Map<Move, List<MachineState>> nextOStates = getStateMachine().getNextStates(s,opponent);
-
-				for (Map.Entry<Move,List<MachineState>> oEntry : nextOStates.entrySet()) {
-					for (MachineState oS : oEntry.getValue()) {
-						child = nodeMap.get(oS);
-						if (child == null) {
-							child = new MCTSNode(oS,node,parentMove);
-							nodeMap.put(child.state, child);
-						}
-						node.children.add(child);
-						//log("Adding new child: "+child.toString());
-					}
+				child = nodeMap.get(s);
+				if (child == null) {
+					child = new MCTSNode(s,node,parentMove);
+					nodeMap.put(child.state, child);
 				}
-
-
+				node.children.add(child);
+				//log("Adding new child: "+child.toString());
 			}
 		}
 
@@ -305,6 +300,9 @@ public class MCTSGamer extends StateMachineGamer
 
 			if (opponent != null) {
 				if (current != null) {
+					double bestOScore = currentOScore;
+					double bestScore  = currentScore;
+
 					for (MCTSNode child : current.children) {
 						double utility = child.totalScore/child.visits;
 						double oUtility = child.opponentScore/child.visits;
@@ -315,9 +313,10 @@ public class MCTSGamer extends StateMachineGamer
 								scores[oIndex] = oUtility;
 							}
 						} else if (moveSelection == 1) {
-							if (child.parentMove == parentMove && child.visits != 0 && oUtility > currentOScore) {
+							if (child.parentMove == parentMove && child.visits != 0 && oUtility > bestOScore) {
 								scores[pIndex] = utility;
 								scores[oIndex] = oUtility;
+								bestOScore = oUtility;
 							}
 						}
 					}
@@ -416,14 +415,14 @@ public class MCTSGamer extends StateMachineGamer
 			int idx = moves.indexOf(child.parentMove);
 
 			if (moveSelection == 0) {
-				if (child.visits > 5 && score < pScores[idx]) {
+				if (child.visits > 0 && score < pScores[idx]) {
 					pScores[idx] = score;
 					scores[idx] = score;
 				}
 			} else if (moveSelection == 1) {
-				if (child.visits > 5 && oScore > oScores[idx]) {
+				if (child.visits > 0 && oScore > oScores[idx]) {
 					oScores[idx] = oScore;
-					scores[idx] = score;
+					scores[idx] = score - oScore;
 				}
 			}
 		}
