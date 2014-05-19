@@ -5,6 +5,9 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -17,6 +20,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JTextField;
@@ -47,7 +51,7 @@ public class MCTSGamer extends StateMachineGamer
 
     private enum MoveSelection {PESSIMISTIC, MIXED, OPTIMISTIC};
 
-    private Long timeout_buffer = 500L; // In milliseconds
+    private Long timeoutBuffer = 500L; // In milliseconds
 
     //TODO: Currently unused - could be used to parallelize depth charges
     private Integer numProbes = 20;
@@ -67,6 +71,13 @@ public class MCTSGamer extends StateMachineGamer
 
 	// Some statistics about the player
 	private long numExpansions = 0;
+	private long numMovesMade  = 0;
+
+	private final ExecutorService threadExecutor = Executors.newSingleThreadExecutor();
+	private boolean keepRunning = false;
+
+	// Number of levels of the tree to dump
+	private static final int TREE_DUMP_LIMIT = 3;
 
 	private class MCTSNode {
 		MachineState state;
@@ -120,6 +131,33 @@ public class MCTSGamer extends StateMachineGamer
 			}
 		}
 
+		protected String toDot(int limit)
+	    {
+			if (limit == 0)
+				return "";
+
+	        StringBuilder sb = new StringBuilder();
+
+	        sb.append("\"@" + Integer.toHexString(hashCode()) + "\"[shape=box, label=\"" + state.toString() + "\n"+
+	        		"Visits: "+visits+" Score: "+totalScore+" oScore: "+opponentScore+"\"]; ");
+	        sb.append("\n");
+
+	        if (limit == 1)
+	        	return sb.toString();
+
+	        for ( Map.Entry<Move,ArrayList<MCTSNode>> siblings : children.entrySet() )
+	        {
+	        	String mvString = siblings.getKey().toString();
+	        	for (MCTSNode child : siblings.getValue()) {
+	        		sb.append(child.toDot(limit-1));
+	        		sb.append("\"@" + Integer.toHexString(hashCode()) + "\"->" + "\"@" + Integer.toHexString(child.hashCode()) + "\"[label=\""+mvString+"\","+
+	        		"penwidth="+((double)child.visits/visits)*10+"]; ");
+	        	}
+	        }
+
+	        return sb.toString();
+	    }
+
 	}
 
 	private void log(String s) {
@@ -138,6 +176,8 @@ public class MCTSGamer extends StateMachineGamer
 
 		private final JComboBox<?>  mvSelectField;
 
+		private final JButton dumpTreeButton;
+
         private final MCTSGamer gamer;
 
         public MCTSConfigPanel(MCTSGamer g) {
@@ -146,17 +186,20 @@ public class MCTSGamer extends StateMachineGamer
 
             //TODO: Is there a more elegant way to add new configuration options?
             numProbesField = new JTextField(gamer.numProbes.toString());
-            timeoutBufferField = new JTextField(gamer.timeout_buffer.toString());
+            timeoutBufferField = new JTextField(gamer.timeoutBuffer.toString());
         	memoryThresholdField = new JTextField(gamer.memoryThreshold.toString());
         	mvSelectField = new JComboBox<Object>(mvSelectStrings);
         	mvSelectField.setSelectedIndex(gamer.moveSelector.ordinal());
         	explorationBiasField = new JTextField(gamer.explorationBias.toString());
+
+        	dumpTreeButton = new JButton("Dump Current Tree");
 
             numProbesField.addActionListener(this);
             timeoutBufferField.addActionListener(this);
 			memoryThresholdField.addActionListener(this);
 			mvSelectField.addActionListener(this);
 			explorationBiasField.addActionListener(this);
+			dumpTreeButton.addActionListener(this);
 
             this.add(new JLabel("Number of probes:"),
             		new GridBagConstraints(0, 0, 1, 1, 0.0, 0.0,
@@ -203,6 +246,10 @@ public class MCTSGamer extends StateMachineGamer
             				GridBagConstraints.CENTER, GridBagConstraints.BOTH,
             				new Insets(5, 5, 5, 5), 5, 5));
 
+            this.add(dumpTreeButton, new GridBagConstraints(0, 5, 0, 1, 0.0, 0.0,
+            			GridBagConstraints.CENTER, GridBagConstraints.BOTH,
+            			new Insets(5, 5, 5, 5), 5, 5));
+
         }
 
         @Override
@@ -212,7 +259,7 @@ public class MCTSGamer extends StateMachineGamer
 				if (e.getSource() == numProbesField) {
 					gamer.numProbes = Integer.valueOf(numProbesField.getText());
 				} else if (e.getSource() == timeoutBufferField) {
-					gamer.timeout_buffer = Long.valueOf(timeoutBufferField.getText());
+					gamer.timeoutBuffer = Long.valueOf(timeoutBufferField.getText());
 				} else if (e.getSource() == memoryThresholdField) {
 					System.out.println("Updating Memory Threshold");
 					gamer.memoryThreshold = Double.valueOf(memoryThresholdField.getText());
@@ -221,6 +268,10 @@ public class MCTSGamer extends StateMachineGamer
 					gamer.moveSelector = MoveSelection.values()[selection];
 				} else if (e.getSource() == explorationBiasField) {
 					gamer.explorationBias = Double.valueOf(explorationBiasField.getText());
+				} else if (e.getSource() == dumpTreeButton) {
+					dumpTreeButton.setEnabled(false);
+					gamer.toDotFile("MCTSTree.dot");
+					dumpTreeButton.setEnabled(true);
 				}
 			} catch (Exception ex) {
 				System.err.println("Error when updating configuration; Changes have not been saved.");
@@ -263,6 +314,7 @@ public class MCTSGamer extends StateMachineGamer
         roleIndices = null;
         opponent = null;
 		nodeMap = null;
+		numMovesMade = 0;
     }
 
     @Override
@@ -271,6 +323,7 @@ public class MCTSGamer extends StateMachineGamer
         roleIndices = null;
         opponent = null;
 		nodeMap = null;
+		numMovesMade = 0;
     }
 
     @Override
@@ -464,7 +517,7 @@ public class MCTSGamer extends StateMachineGamer
 		}
 
 
-		while (true) {
+		while (keepRunning) {
 			MCTSNode selection = select(currentNode);
 
 			if (expandNewNodes)
@@ -480,6 +533,8 @@ public class MCTSGamer extends StateMachineGamer
 
 			numExpansions++;
 		}
+
+		return null;
 
     }
 
@@ -557,8 +612,8 @@ public class MCTSGamer extends StateMachineGamer
 
         System.out.println("TIMEOUT: "+(timeout-start));
 
-        ExecutorService exec = Executors.newSingleThreadExecutor();
-        Future<Move> f = exec.submit(new Callable<Move>() {
+        keepRunning = true;
+        Future<Move> task = threadExecutor.submit(new Callable<Move>() {
             @Override
 			public Move call() throws TransitionDefinitionException, MoveDefinitionException,
                           GoalDefinitionException {
@@ -569,21 +624,20 @@ public class MCTSGamer extends StateMachineGamer
         Move selection = null;
 
         try {
-            selection = f.get(timeout - start - timeout_buffer, TimeUnit.MILLISECONDS);
+            selection = task.get(timeout - start - timeoutBuffer, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            System.out.println("getMove() timed-out");
-            exec.shutdownNow();
+            keepRunning = false;
 			selection = getBestMove();
         } catch (Exception e) {
-            System.out.println("getMove() was interrupted");
+            System.err.println("getMove() was interrupted");
 		    GamerLogger.logStackTrace("GamePlayer", e);
             selection = getRandomMove();
         }
 
-
+        numMovesMade++;
 		log("Num Expansions: "+numExpansions);
 		log("Size of Node-map: "+nodeMap.size());
-		//nodeMap = null;
+
         // We get the end time
         // It is mandatory that stop<timeout
         long stop = System.currentTimeMillis();
@@ -618,5 +672,33 @@ public class MCTSGamer extends StateMachineGamer
 			return null;
 		}
 	}
+
+	private String toDot() {
+		StringBuilder sb = new StringBuilder();
+		MCTSNode root = nodeMap.get(getCurrentState());
+
+		sb.append("digraph MCTSTree\n{\n");
+		if (root != null)
+			sb.append("\t" + root.toDot(TREE_DUMP_LIMIT) + "\n");
+		sb.append("}");
+
+		return sb.toString();
+	}
+
+	private void toDotFile(String filename) {
+		if (numMovesMade == 0)
+			return;
+		try {
+            File f = new File(filename);
+            FileOutputStream fos = new FileOutputStream(f);
+            OutputStreamWriter fout = new OutputStreamWriter(fos, "UTF-8");
+            fout.write(toDot());
+            fout.close();
+            fos.close();
+        } catch(Exception e) {
+            GamerLogger.logStackTrace("MCTSGamer", e);
+        }
+	}
+
 
 }
