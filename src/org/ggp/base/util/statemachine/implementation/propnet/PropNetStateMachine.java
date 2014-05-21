@@ -41,6 +41,9 @@ public class PropNetStateMachine extends StateMachine {
 			entry.getValue().setValue(false);
 		}
 
+		if (s == null)
+			return;
+
 		for (GdlSentence sent : s.getContents()) {
 			Proposition bp = baseProps.get(sent);
 			if (bp != null)
@@ -54,6 +57,9 @@ public class PropNetStateMachine extends StateMachine {
 		for (Map.Entry<GdlSentence, Proposition> entry : inputProps.entrySet()) {
 			entry.getValue().setValue(false);
 		}
+
+		if (moves == null)
+			return;
 
 		for (Move m : moves) {
 			Proposition ip = inputProps.get(m.getContents());
@@ -82,6 +88,8 @@ public class PropNetStateMachine extends StateMachine {
 	@Override
 	public boolean isTerminal(MachineState state) {
 		markBases(state);
+		markActions(null);
+		propagateValues();
 		return propNet.getTerminalProposition().getValue();
 	}
 
@@ -127,6 +135,12 @@ public class PropNetStateMachine extends StateMachine {
 		return getStateFromBase();
 	}
 
+	private void propagateValues() {
+		for (Proposition p : ordering) {
+			p.setValue(p.getSingleInput().getValue());
+		}
+	}
+
 	/**
 	 * Computes the legal moves for role in state.
 	 */
@@ -134,12 +148,16 @@ public class PropNetStateMachine extends StateMachine {
 	public List<Move> getLegalMoves(MachineState state, Role role)
 	throws MoveDefinitionException {
 		markBases(state);
+		markActions(null);
+
+		propagateValues();
 
 		ArrayList<Move> legalMoves = new ArrayList<Move>();
 
 		Set<Proposition> legals = propNet.getLegalPropositions().get(role);
 
 		for (Proposition lp : legals) {
+			lp.setValue(lp.getSingleInput().getValue());
 			if (lp.getValue())
 				legalMoves.add(getMoveFromProposition(lp));
 		}
@@ -155,7 +173,7 @@ public class PropNetStateMachine extends StateMachine {
 	throws TransitionDefinitionException {
 		markActions(moves);
 		markBases(state);
-
+		propagateValues();
 		return getStateFromBase();
 	}
 
@@ -184,7 +202,51 @@ public class PropNetStateMachine extends StateMachine {
 		// All of the propositions in the PropNet.
 		List<Proposition> propositions = new ArrayList<Proposition>(propNet.getPropositions());
 
-		// TODO: Compute the topological ordering.
+		HashSet<Proposition> usedPropositions = new HashSet<Proposition>();
+		HashSet<Proposition> unusedPropositions = new HashSet<Proposition>();
+
+		usedPropositions.addAll(propNet.getBasePropositions().values());
+		usedPropositions.addAll(propNet.getInputPropositions().values());
+		usedPropositions.add(propNet.getInitProposition());
+
+		unusedPropositions.addAll(propositions);
+		unusedPropositions.removeAll(usedPropositions);
+
+		while(!unusedPropositions.isEmpty()) {
+
+			for (Proposition unusedP : unusedPropositions) {
+
+				HashSet<Proposition> dependencies = new HashSet<Proposition>();
+				HashSet<Component> componentDependencies = new HashSet<Component>();
+
+				LinkedList<Component> dependencyQueue = new LinkedList<Component>();
+
+				componentDependencies.add(unusedP);
+
+				while(!dependencyQueue.isEmpty()) {
+					Component dependency = dependencyQueue.pop();
+
+					for (Component input : dependency.getInputs()) {
+						if (input instanceof Proposition)
+							dependencies.add((Proposition)input);
+						else {
+							if (!componentDependencies.contains(input)) {
+								componentDependencies.add(input);
+								dependencyQueue.addLast(input);
+							}
+						}
+
+					}
+				}
+
+				if (usedPropositions.containsAll(dependencies)) {
+					usedPropositions.add(unusedP);
+					unusedPropositions.remove(unusedP);
+					order.add(unusedP);
+					break;
+				}
+			}
+		}
 
 		return order;
 	}
