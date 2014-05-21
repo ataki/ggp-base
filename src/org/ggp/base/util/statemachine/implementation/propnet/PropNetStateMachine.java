@@ -46,6 +46,10 @@ public class PropNetStateMachine extends StateMachine {
 			if (bp != null)
 				bp.setValue(true);
 		}
+
+        Set<Proposition> derivedBaseProps = new HashSet<Proposition>(baseProps.values());
+
+        forwardPropagate();
 	}
 
 	private void markActions(List<Move> moves) {
@@ -61,7 +65,24 @@ public class PropNetStateMachine extends StateMachine {
 				ip.setValue(true);
 		}
 
+        forwardPropagate();
 	}
+
+    /* assumes change to state, i.e. when updating markings of the propnet */
+    private void forwardPropagate() {
+        for (Component c : ordering) {
+            Set<Component> inputs = c.getInputs();
+            boolean val = false;
+            for (Component input : inputs) {
+                val |= input.getValue();
+            }
+            Proposition p = (Proposition) c;
+            p.setValue(val);
+            if (p.getValue())
+                System.out.println(p.hashCode() + " has been set to true");
+        }
+        System.out.println("----- Completed one run of forward propagation ----");
+    }
 
 	/**
 	 * Initializes the PropNetStateMachine. You should compute the topological
@@ -140,10 +161,10 @@ public class PropNetStateMachine extends StateMachine {
 		Set<Proposition> legals = propNet.getLegalPropositions().get(role);
 
 		for (Proposition lp : legals) {
-			if (lp.getValue())
+			if (lp.getValue()) {
 				legalMoves.add(getMoveFromProposition(lp));
+			}
 		}
-
 		return legalMoves;
 	}
 
@@ -184,7 +205,35 @@ public class PropNetStateMachine extends StateMachine {
 		// All of the propositions in the PropNet.
 		List<Proposition> propositions = new ArrayList<Proposition>(propNet.getPropositions());
 
-		// TODO: Compute the topological ordering.
+        Set<Component> candidates = new HashSet<Component>();
+        Set<Component> seen = new HashSet<Component>();
+        Set<Proposition> inputs = new HashSet<Proposition>(propNet.getInputPropositions().values());
+
+        // Initialize by finding components that are inputs
+        for (Component c : components) {
+        	if (c instanceof Proposition && inputs.contains((Proposition) c)) {
+        		candidates.add(c);
+        	}
+        }
+
+        // Breadth-first traversal through inputs
+        while (candidates.size() != 0) {
+            Set<Component> candidatesDownstream = new HashSet<Component>();
+            // Go over all possible next candidates
+            for (Component c : candidates) {
+                for (Component out : c.getOutputs()) {
+                    if (out.getOutputs().size() > 0 && !seen.contains(out)) {
+                        candidatesDownstream.add(out);
+                    }
+                    if (out instanceof Proposition) {
+                       order.add((Proposition) out);
+                    }
+                    seen.add(out);
+                }
+            }
+            candidates.clear();
+            candidates.addAll(candidatesDownstream);
+        }
 
 		return order;
 	}

@@ -28,7 +28,7 @@ public class PropNetStateMachineTests extends Assert {
     protected final GdlConstant C100 = GdlPool.getConstant("100");
 
     @Test
-    public void testProverOnTicTacToe() throws Exception {
+    public void testPropNetOnTicTacToe() throws Exception {
         List<Gdl> ticTacToeDesc = new TestGameRepository().getGame("ticTacToe").getRules();
         sm.initialize(ticTacToeDesc);
         MachineState state = sm.getInitialState();
