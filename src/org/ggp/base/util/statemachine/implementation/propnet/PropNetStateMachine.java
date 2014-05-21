@@ -24,6 +24,11 @@ import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
 
+import org.ggp.base.util.propnet.architecture.components.And;
+import org.ggp.base.util.propnet.architecture.components.Or;
+import org.ggp.base.util.propnet.architecture.components.Not;
+import org.ggp.base.util.propnet.architecture.components.Transition;
+import org.ggp.base.util.propnet.architecture.components.Constant;
 
 @SuppressWarnings("unused")
 public class PropNetStateMachine extends StateMachine {
@@ -48,8 +53,6 @@ public class PropNetStateMachine extends StateMachine {
 		}
 
         Set<Proposition> derivedBaseProps = new HashSet<Proposition>(baseProps.values());
-
-        forwardPropagate();
 	}
 
 	private void markActions(List<Move> moves) {
@@ -64,24 +67,47 @@ public class PropNetStateMachine extends StateMachine {
 			if (ip != null)
 				ip.setValue(true);
 		}
-
-        forwardPropagate();
 	}
 
     /* assumes change to state, i.e. when updating markings of the propnet */
     private void forwardPropagate() {
         for (Component c : ordering) {
             Set<Component> inputs = c.getInputs();
-            boolean val = false;
+
+            boolean newComponentValue = true;
+
             for (Component input : inputs) {
-                val |= input.getValue();
+                boolean cValue = false;
+
+                if (input instanceof Or) {
+                    for (Component cInput : input.getInputs()) {
+                        cValue |= cInput.getValue();
+                    }
+                }
+                else if (input instanceof And) {
+                    cValue = true;
+                    for (Component cInput : input.getInputs()) {
+                        cValue &= cInput.getValue();
+                    }
+                }
+                else if (input instanceof Not) {
+                    cValue = !input.getSingleInput().getValue();
+                }
+                else if (input instanceof Transition) {
+                    cValue = input.getSingleInput().getValue();
+                }
+
+                if (!cValue) {
+                    newComponentValue = false;
+                    break;
+                }
             }
             Proposition p = (Proposition) c;
-            p.setValue(val);
+            p.setValue(newComponentValue);
+
             if (p.getValue())
                 System.out.println(p.hashCode() + " has been set to true");
         }
-        System.out.println("----- Completed one run of forward propagation ----");
     }
 
 	/**
@@ -176,7 +202,7 @@ public class PropNetStateMachine extends StateMachine {
 	throws TransitionDefinitionException {
 		markActions(moves);
 		markBases(state);
-
+        forwardPropagate();
 		return getStateFromBase();
 	}
 
