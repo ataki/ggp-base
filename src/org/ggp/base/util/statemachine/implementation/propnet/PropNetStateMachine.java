@@ -19,10 +19,6 @@ import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
 
-import org.ggp.base.util.propnet.architecture.components.And;
-import org.ggp.base.util.propnet.architecture.components.Or;
-import org.ggp.base.util.propnet.architecture.components.Not;
-import org.ggp.base.util.propnet.architecture.components.Transition;
 import org.ggp.base.util.propnet.architecture.components.Constant;
 
 @SuppressWarnings("unused")
@@ -48,8 +44,6 @@ public class PropNetStateMachine extends StateMachine {
 			if (bp != null)
 				bp.setValue(true);
 		}
-
-        Set<Proposition> derivedBaseProps = new HashSet<Proposition>(baseProps.values());
 	}
 
 	private void markActions(List<Move> moves) {
@@ -70,9 +64,12 @@ public class PropNetStateMachine extends StateMachine {
 
     /* assumes change to state, i.e. when updating markings of the propnet */
     private void forwardPropagate() {
+        int counter = 0;
         for (Proposition p : ordering) {
             p.setValue(p.getSingleInput().getValue());
+            if (p.getSingleInput().getValue()) counter++;
         }
+        System.out.println("num props true: " + counter);
     }
 
 	/**
@@ -110,6 +107,9 @@ public class PropNetStateMachine extends StateMachine {
 	public int getGoal(MachineState state, Role role)
 	throws GoalDefinitionException {
 		markBases(state);
+        markActions(null);
+        forwardPropagate();
+
 		Set<Proposition> goalProps = propNet.getGoalPropositions().get(role);
 
 		Proposition goalProposition = null;
@@ -137,7 +137,9 @@ public class PropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getInitialState() {
 		Proposition init = propNet.getInitProposition();
-		init.setValue(true);
+        if (init != null) {
+            init.setValue(true);
+        }
 		return getStateFromBase();
 	}
 
@@ -199,7 +201,6 @@ public class PropNetStateMachine extends StateMachine {
 
 		// All of the propositions in the PropNet.
 		List<Proposition> propositions = new ArrayList<Proposition>(propNet.getPropositions());
-        System.out.println("Number of propositions " + propositions.size());
 
         Set<Proposition> startingPropositions = new HashSet<Proposition>();
         startingPropositions.addAll(propNet.getInputPropositions().values());
