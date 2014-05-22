@@ -41,6 +41,10 @@ public class PropNetStateMachine extends StateMachine {
 			entry.getValue().setValue(false);
 		}
 
+		Proposition initProp = propNet.getInitProposition();
+		if (initProp != null)
+			initProp.setValue(false);
+
 		if (s == null)
 			return;
 
@@ -61,8 +65,10 @@ public class PropNetStateMachine extends StateMachine {
 		if (moves == null)
 			return;
 
-		for (Move m : moves) {
-			Proposition ip = inputProps.get(m.getContents());
+		List<GdlSentence> sentences = toDoes(moves);
+
+		for (GdlSentence sent : sentences) {
+			Proposition ip = inputProps.get(sent);
 			if (ip != null)
 				ip.setValue(true);
 		}
@@ -90,7 +96,10 @@ public class PropNetStateMachine extends StateMachine {
 		markBases(state);
 		markActions(null);
 		propagateValues();
-		return propNet.getTerminalProposition().getValue();
+
+		Proposition term = propNet.getTerminalProposition();
+
+		return term.getValue();
 	}
 
 	/**
@@ -130,8 +139,17 @@ public class PropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public MachineState getInitialState() {
+
+		markBases(null);
+		markActions(null);
+
 		Proposition init = propNet.getInitProposition();
-		init.setValue(true);
+
+		if (init != null)
+			init.setValue(true);
+
+		propagateValues();
+
 		return getStateFromBase();
 	}
 
@@ -207,7 +225,9 @@ public class PropNetStateMachine extends StateMachine {
 
 		usedPropositions.addAll(propNet.getBasePropositions().values());
 		usedPropositions.addAll(propNet.getInputPropositions().values());
-		usedPropositions.add(propNet.getInitProposition());
+
+		if (propNet.getInitProposition() != null)
+			usedPropositions.add(propNet.getInitProposition());
 
 		unusedPropositions.addAll(propositions);
 		unusedPropositions.removeAll(usedPropositions);
@@ -221,7 +241,7 @@ public class PropNetStateMachine extends StateMachine {
 
 				LinkedList<Component> dependencyQueue = new LinkedList<Component>();
 
-				componentDependencies.add(unusedP);
+				dependencyQueue.add(unusedP);
 
 				while(!dependencyQueue.isEmpty()) {
 					Component dependency = dependencyQueue.pop();
