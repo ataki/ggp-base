@@ -1,11 +1,6 @@
 package org.ggp.base.util.statemachine.implementation.propnet;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlConstant;
@@ -46,6 +41,8 @@ public class PropNetStateMachine extends StateMachine {
 			entry.getValue().setValue(false);
 		}
 
+        if (s == null) return;
+
 		for (GdlSentence sent : s.getContents()) {
 			Proposition bp = baseProps.get(sent);
 			if (bp != null)
@@ -62,6 +59,8 @@ public class PropNetStateMachine extends StateMachine {
 			entry.getValue().setValue(false);
 		}
 
+        if (moves == null) return;
+
 		for (Move m : moves) {
 			Proposition ip = inputProps.get(m.getContents());
 			if (ip != null)
@@ -71,42 +70,8 @@ public class PropNetStateMachine extends StateMachine {
 
     /* assumes change to state, i.e. when updating markings of the propnet */
     private void forwardPropagate() {
-        for (Component c : ordering) {
-            Set<Component> inputs = c.getInputs();
-
-            boolean newComponentValue = true;
-
-            for (Component input : inputs) {
-                boolean cValue = false;
-
-                if (input instanceof Or) {
-                    for (Component cInput : input.getInputs()) {
-                        cValue |= cInput.getValue();
-                    }
-                }
-                else if (input instanceof And) {
-                    cValue = true;
-                    for (Component cInput : input.getInputs()) {
-                        cValue &= cInput.getValue();
-                    }
-                }
-                else if (input instanceof Not) {
-                    cValue = !input.getSingleInput().getValue();
-                }
-                else if (input instanceof Transition) {
-                    cValue = input.getSingleInput().getValue();
-                }
-
-                if (!cValue) {
-                    newComponentValue = false;
-                    break;
-                }
-            }
-            Proposition p = (Proposition) c;
-            p.setValue(newComponentValue);
-
-            if (p.getValue())
-                System.out.println(p.hashCode() + " has been set to true");
+        for (Proposition p : ordering) {
+            p.setValue(p.getSingleInput().getValue());
         }
     }
 
@@ -129,6 +94,8 @@ public class PropNetStateMachine extends StateMachine {
 	@Override
 	public boolean isTerminal(MachineState state) {
 		markBases(state);
+        markActions(null);
+        forwardPropagate();
 		return propNet.getTerminalProposition().getValue();
 	}
 
@@ -181,6 +148,8 @@ public class PropNetStateMachine extends StateMachine {
 	public List<Move> getLegalMoves(MachineState state, Role role)
 	throws MoveDefinitionException {
 		markBases(state);
+        markActions(null);
+        forwardPropagate();
 
 		ArrayList<Move> legalMoves = new ArrayList<Move>();
 
@@ -230,37 +199,52 @@ public class PropNetStateMachine extends StateMachine {
 
 		// All of the propositions in the PropNet.
 		List<Proposition> propositions = new ArrayList<Proposition>(propNet.getPropositions());
+        System.out.println("Number of propositions " + propositions.size());
 
-        Set<Component> candidates = new HashSet<Component>();
+        Set<Proposition> startingPropositions = new HashSet<Proposition>();
+        startingPropositions.addAll(propNet.getInputPropositions().values());
+        startingPropositions.addAll(propNet.getBasePropositions().values());
+        startingPropositions.add(propNet.getInitProposition());
+
+        // Set of initial starting components.
+        // Includes components that are
+        // - base propositions
+        // - input propositions
+        // - init proposition
+        // - constants
+        Set<Component> startingCandidates = new HashSet<Component>();
+        for (Component c : components)
+            if (c instanceof Proposition && startingPropositions.contains((Proposition) c))
+                startingCandidates.add(c);
+            else if (c instanceof Constant)
+                startingCandidates.add(c);
+
+        // Don't come back to seen components
         Set<Component> seen = new HashSet<Component>();
-        Set<Proposition> inputs = new HashSet<Proposition>(propNet.getInputPropositions().values());
+        seen.addAll(startingCandidates);
+        propositions.removeAll(seen);
 
-        // Initialize by finding components that are inputs
-        for (Component c : components) {
-        	if (c instanceof Proposition && inputs.contains((Proposition) c)) {
-        		candidates.add(c);
-        	}
-        }
-
-        // Breadth-first traversal through inputs
+        // Current candidates to consider neighbors of
+        Set<Component> candidates = new HashSet<Component>();
+        candidates.addAll(startingCandidates);
+        Set<Component> nextStepCandidates;
         while (candidates.size() != 0) {
-            Set<Component> candidatesDownstream = new HashSet<Component>();
-            // Go over all possible next candidates
+            nextStepCandidates = new HashSet<Component>();
             for (Component c : candidates) {
                 for (Component out : c.getOutputs()) {
-                    if (out.getOutputs().size() > 0 && !seen.contains(out)) {
-                        candidatesDownstream.add(out);
+                    if (!seen.contains(out)) {
+                        seen.add(out);
+                        nextStepCandidates.add(out);
+                        if (out instanceof Proposition) {
+                            order.add((Proposition) out);
+                            propositions.remove((Proposition) out);
+                        }
                     }
-                    if (out instanceof Proposition) {
-                       order.add((Proposition) out);
-                    }
-                    seen.add(out);
                 }
             }
             candidates.clear();
-            candidates.addAll(candidatesDownstream);
+            candidates.addAll(nextStepCandidates);
         }
-
 		return order;
 	}
 
