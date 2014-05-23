@@ -107,13 +107,22 @@ public class MCTSGamer extends StateMachineGamer
 			this(s,0,0.0,0.0,p,m);
 		}
 
+		private int getNumChildren() {
+			int count = 0;
+			for (Map.Entry<Move, ArrayList<MCTSNode>> entry : children.entrySet()) {
+				count += entry.getValue().size();
+			}
+
+			return count;
+		}
+
 		@Override
 		public String toString() {
 			StringBuilder sb = new StringBuilder();
 			sb.append("State: "+state+"\n");
 			sb.append("Visits: "+visits+"\n");
 			sb.append("TotalScore: "+totalScore+"\t"+"oScore:"+opponentScore+"\n");
-			sb.append("Num children: "+children.size()+"\n");
+			sb.append("Num children: "+getNumChildren()+"\n");
 			sb.append("Parent Move: "+parentMove+"\n");
 
 			return sb.toString();
@@ -137,8 +146,13 @@ public class MCTSGamer extends StateMachineGamer
 				return "";
 
 	        StringBuilder sb = new StringBuilder();
+	        String stateStr = state.toString();
 
-	        sb.append("\"@" + Integer.toHexString(hashCode()) + "\"[shape=box, label=\"" + state.toString() + "\n"+
+	        if (stateStr.length() > 40) {
+	        	stateStr = stateStr.substring(0,40);
+	        }
+
+	        sb.append("\"@" + Integer.toHexString(hashCode()) + "\"[shape=box, label=\"" + stateStr + "\n"+
 	        		"Visits: "+visits+" Score: "+totalScore+" oScore: "+opponentScore+"\"]; ");
 	        sb.append("\n");
 
@@ -350,16 +364,23 @@ public class MCTSGamer extends StateMachineGamer
 	private MCTSNode select(MCTSNode root) {
 
 		MCTSNode current = root;
-
+		int iteration = 0;
 		while (true) {
 
-			if (current.visits == 0 || getStateMachine().isTerminal(current.state))
-				return expandNewNodes?current:(current.parent==null?current:current.parent);
+			if (current.visits == 0 || getStateMachine().isTerminal(current.state)) {
+				if (!expandNewNodes && iteration > 0)
+					return current.parent;
+				return current;
+			}
 
 			for (Map.Entry<Move, ArrayList<MCTSNode>> siblings : current.children.entrySet()) {
 				for (MCTSNode child : siblings.getValue()) {
-					if (child.visits == 0)
-						return expandNewNodes?child:current;
+					if (child.visits == 0) {
+						if (!expandNewNodes && iteration > 0)
+							return current;
+
+						return child;
+					}
 				}
 			}
 
@@ -416,6 +437,7 @@ public class MCTSGamer extends StateMachineGamer
 
 			assert bestChild != current;
 			current = bestChild;
+			iteration++;
 		}
 	}
 
@@ -425,7 +447,7 @@ public class MCTSGamer extends StateMachineGamer
 		//log("************************EXPAND************************\n");
 		//log("Expanding Node: "+node.toString());
 
-		if (getStateMachine().isTerminal(node.state))
+		if (node.visits > 0 || getStateMachine().isTerminal(node.state))
 			return;
 
 		Map<Move, List<MachineState>> nextStates = getStateMachine().getNextStates(node.state, getRole());
@@ -496,6 +518,8 @@ public class MCTSGamer extends StateMachineGamer
 		if (moves.size() == 1)
 			return moves.get(0);
 
+
+
 		MCTSNode currentNode = nodeMap.get(getCurrentState());
 		if (currentNode == null) {
 			currentNode = new MCTSNode(getCurrentState(), null, null);
@@ -509,8 +533,8 @@ public class MCTSGamer extends StateMachineGamer
 
 		System.out.println("Used Memory: "+usedPercent+"%");
 		System.out.println("MEMORY THRESHOLD: "+memoryThreshold);
-		expandNewNodes = true;
 
+		expandNewNodes = true;
 		if (usedPercent >= memoryThreshold) {
 			System.out.println("Memory threshold exceeded - new states will not be expanded");
 			expandNewNodes = false;
@@ -520,8 +544,7 @@ public class MCTSGamer extends StateMachineGamer
 		while (keepRunning) {
 			MCTSNode selection = select(currentNode);
 
-			if (expandNewNodes)
-				expand(selection);
+			expand(selection);
 
 			List<Integer> scoresList = depthCharge(selection.state);
 
@@ -546,15 +569,22 @@ public class MCTSGamer extends StateMachineGamer
 		double score = Double.NEGATIVE_INFINITY;
 
 		log("**********************Best Move******************************\n");
-		GamerLogger.log("MCTSGamer", "Current State: "+current.state+"\n");
-		GamerLogger.log("MCTSGamer", "Children:\n");
+		GamerLogger.log("MCTSGamer", "Current State:\n");
+		GamerLogger.log("MCTSGamer", current.toString());
 		for (Map.Entry<Move, ArrayList<MCTSNode>> siblings : current.children.entrySet()) {
 			double   siblingScore = Double.POSITIVE_INFINITY;
+
+			if (moveSelector == MoveSelection.OPTIMISTIC)
+				siblingScore = Double.NEGATIVE_INFINITY;
+
 			double   siblingOScore = Double.NEGATIVE_INFINITY;
 			Move 	 currentMove = siblings.getKey();
 
 			for (MCTSNode child : siblings.getValue()) {
-				GamerLogger.log("MCTSGamer", child.toString());
+				//GamerLogger.log("MCTSGamer", child.toString());
+				if (child.visits == 0)
+					continue;
+
 				double newScore = child.totalScore/child.visits;
 				double oScore   = 0.0;
 
@@ -578,11 +608,13 @@ public class MCTSGamer extends StateMachineGamer
 				}
 			}
 
-			if (siblingScore > score) {
+			if (!Double.isInfinite(siblingScore) && siblingScore > score) {
 				score = siblingScore;
 				bestMove = currentMove;
 			}
 		}
+
+		GamerLogger.log("MCTSGamer", "BEST SCORE: "+score+"\n");
 
 		log("***********************************************************************\n");
 
