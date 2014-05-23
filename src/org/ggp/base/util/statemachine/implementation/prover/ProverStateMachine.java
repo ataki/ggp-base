@@ -27,6 +27,7 @@ public class ProverStateMachine extends StateMachine
 	private MachineState initialState;
 	private Prover prover;
 	private List<Role> roles;
+	public List<Gdl> gdlDescription;
 
 	/**
 	 * Initialize must be called before using the StateMachine
@@ -39,6 +40,7 @@ public class ProverStateMachine extends StateMachine
 	@Override
 	public void initialize(List<Gdl> description)
 	{
+		gdlDescription = description;
 		prover = new AimaProver(description);
 		roles = Role.computeRoles(description);
 		initialState = computeInitialState();
