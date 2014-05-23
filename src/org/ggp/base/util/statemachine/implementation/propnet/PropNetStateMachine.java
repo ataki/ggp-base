@@ -14,6 +14,7 @@ import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
+import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.propnet.factory.PropNetFactory;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -37,11 +38,42 @@ public class PropNetStateMachine extends StateMachine {
 	private void markBases(MachineState s) {
 		Map<GdlSentence, Proposition> baseProps = propNet.getBasePropositions();
 
+		for (Map.Entry<GdlSentence, Proposition> entry : baseProps.entrySet()) {
+			entry.getValue().setValue(false);
+		}
+
+		Proposition initProp = propNet.getInitProposition();
+		if (initProp != null)
+			initProp.setValue(false);
+
+		if (s == null)
+			return;
+
 		for (GdlSentence sent : s.getContents()) {
 			Proposition bp = baseProps.get(sent);
 			if (bp != null)
 				bp.setValue(true);
 		}
+	}
+
+	private void markActions(List<Move> moves) {
+		Map<GdlSentence, Proposition> inputProps = propNet.getInputPropositions();
+
+		for (Map.Entry<GdlSentence, Proposition> entry : inputProps.entrySet()) {
+			entry.getValue().setValue(false);
+		}
+
+		if (moves == null)
+			return;
+
+		List<GdlSentence> sentences = toDoes(moves);
+
+		for (GdlSentence sent : sentences) {
+			Proposition ip = inputProps.get(sent);
+			if (ip != null)
+				ip.setValue(true);
+		}
+
 	}
 
 	/**
@@ -51,7 +83,12 @@ public class PropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public void initialize(List<Gdl> description) {
-		propNet = PropNetFactory.create(description);
+		try {
+			propNet = OptimizingPropNetFactory.create(description,true);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+			propNet = PropNetFactory.create(description);
+		}
 		roles = propNet.getRoles();
 		ordering = getOrdering();
 	}
@@ -62,8 +99,13 @@ public class PropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public boolean isTerminal(MachineState state) {
-		// TODO: Compute whether the MachineState is terminal.
-		return false;
+		markBases(state);
+		markActions(null);
+		propagateValues();
+
+		Proposition term = propNet.getTerminalProposition();
+
+		return term.getValue();
 	}
 
 	/**
@@ -76,8 +118,24 @@ public class PropNetStateMachine extends StateMachine {
 	@Override
 	public int getGoal(MachineState state, Role role)
 	throws GoalDefinitionException {
-		// TODO: Compute the goal for role in state.
-		return -1;
+		markBases(state);
+		Set<Proposition> goalProps = propNet.getGoalPropositions().get(role);
+
+		Proposition goalProposition = null;
+		for (Proposition gp : goalProps) {
+			if (gp.getValue()) {
+				if (goalProposition != null)
+					throw new GoalDefinitionException(state, role);
+
+				goalProposition = gp;
+			}
+
+		}
+
+		if (goalProposition == null)
+			throw new GoalDefinitionException(state, role);
+
+		return getGoalValue(goalProposition);
 	}
 
 	/**
@@ -87,8 +145,24 @@ public class PropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public MachineState getInitialState() {
-		// TODO: Compute the initial state.
-		return null;
+
+		markBases(null);
+		markActions(null);
+
+		Proposition init = propNet.getInitProposition();
+
+		if (init != null)
+			init.setValue(true);
+
+		propagateValues();
+
+		return getStateFromBase();
+	}
+
+	private void propagateValues() {
+		for (Proposition p : ordering) {
+			p.setValue(p.getSingleInput().getValue());
+		}
 	}
 
 	/**
@@ -98,10 +172,21 @@ public class PropNetStateMachine extends StateMachine {
 	public List<Move> getLegalMoves(MachineState state, Role role)
 	throws MoveDefinitionException {
 		markBases(state);
+		markActions(null);
+
+		propagateValues();
+
+		ArrayList<Move> legalMoves = new ArrayList<Move>();
 
 		Set<Proposition> legals = propNet.getLegalPropositions().get(role);
 
-		return null;
+		for (Proposition lp : legals) {
+			lp.setValue(lp.getSingleInput().getValue());
+			if (lp.getValue())
+				legalMoves.add(getMoveFromProposition(lp));
+		}
+
+		return legalMoves;
 	}
 
 	/**
@@ -110,8 +195,10 @@ public class PropNetStateMachine extends StateMachine {
 	@Override
 	public MachineState getNextState(MachineState state, List<Move> moves)
 	throws TransitionDefinitionException {
-		// TODO: Compute the next state.
-		return null;
+		markActions(moves);
+		markBases(state);
+		propagateValues();
+		return getStateFromBase();
 	}
 
 	/**
@@ -139,7 +226,53 @@ public class PropNetStateMachine extends StateMachine {
 		// All of the propositions in the PropNet.
 		List<Proposition> propositions = new ArrayList<Proposition>(propNet.getPropositions());
 
-		// TODO: Compute the topological ordering.
+		HashSet<Proposition> usedPropositions = new HashSet<Proposition>();
+		HashSet<Proposition> unusedPropositions = new HashSet<Proposition>();
+
+		usedPropositions.addAll(propNet.getBasePropositions().values());
+		usedPropositions.addAll(propNet.getInputPropositions().values());
+
+		if (propNet.getInitProposition() != null)
+			usedPropositions.add(propNet.getInitProposition());
+
+		unusedPropositions.addAll(propositions);
+		unusedPropositions.removeAll(usedPropositions);
+
+		while(!unusedPropositions.isEmpty()) {
+
+			for (Proposition unusedP : unusedPropositions) {
+
+				HashSet<Proposition> dependencies = new HashSet<Proposition>();
+				HashSet<Component> componentDependencies = new HashSet<Component>();
+
+				LinkedList<Component> dependencyQueue = new LinkedList<Component>();
+
+				dependencyQueue.add(unusedP);
+
+				while(!dependencyQueue.isEmpty()) {
+					Component dependency = dependencyQueue.pop();
+
+					for (Component input : dependency.getInputs()) {
+						if (input instanceof Proposition)
+							dependencies.add((Proposition)input);
+						else {
+							if (!componentDependencies.contains(input)) {
+								componentDependencies.add(input);
+								dependencyQueue.addLast(input);
+							}
+						}
+
+					}
+				}
+
+				if (usedPropositions.containsAll(dependencies)) {
+					usedPropositions.add(unusedP);
+					unusedPropositions.remove(unusedP);
+					order.add(unusedP);
+					break;
+				}
+			}
+		}
 
 		return order;
 	}
