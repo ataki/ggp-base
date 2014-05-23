@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -41,6 +42,7 @@ import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
+import org.ggp.base.util.statemachine.implementation.propnet.PropNetStateMachine;
 import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class MCTSGamer extends StateMachineGamer
@@ -50,11 +52,9 @@ public class MCTSGamer extends StateMachineGamer
     private Role opponent = null;
 
     private enum MoveSelection {PESSIMISTIC, MIXED, OPTIMISTIC};
+    private enum SMSelection {PROVER,PROPNET};
 
     private Long timeoutBuffer = 500L; // In milliseconds
-
-    //TODO: Currently unused - could be used to parallelize depth charges
-    private Integer numProbes = 20;
 
     // This map allows us to keep the previous updates in memory when playing a game.
     // There does not seem to be a significant boost due to this, but it does not
@@ -73,11 +73,18 @@ public class MCTSGamer extends StateMachineGamer
 	private long numExpansions = 0;
 	private long numMovesMade  = 0;
 
+	// Run MCTS in separate thread to handle timeouts
 	private final ExecutorService threadExecutor = Executors.newSingleThreadExecutor();
 	private boolean keepRunning = false;
 
 	// Number of levels of the tree to dump
 	private static final int TREE_DUMP_LIMIT = 3;
+
+	private SMSelection SMToUse = SMSelection.PROVER;
+
+	// Parallelize depth-charges
+	private final ExecutorService chargeExecutor = Executors.newCachedThreadPool();
+	private Integer numProbes = 4;
 
 	private class MCTSNode {
 		MachineState state;
@@ -112,7 +119,6 @@ public class MCTSGamer extends StateMachineGamer
 			for (Map.Entry<Move, ArrayList<MCTSNode>> entry : children.entrySet()) {
 				count += entry.getValue().size();
 			}
-
 			return count;
 		}
 
@@ -182,6 +188,7 @@ public class MCTSGamer extends StateMachineGamer
     private class MCTSConfigPanel extends ConfigPanel implements ActionListener {
 
     	private final String [] mvSelectStrings = {"Pessimistic", "Mixed", "Optimistic"};
+    	private final String [] SMSelectStrings = {"Prover", "PropNet"};
 
         private final JTextField numProbesField;
         private final JTextField timeoutBufferField;
@@ -191,6 +198,8 @@ public class MCTSGamer extends StateMachineGamer
 		private final JComboBox<?>  mvSelectField;
 
 		private final JButton dumpTreeButton;
+
+		private final JComboBox<?> SMSelectField;
 
         private final MCTSGamer gamer;
 
@@ -205,6 +214,8 @@ public class MCTSGamer extends StateMachineGamer
         	mvSelectField = new JComboBox<Object>(mvSelectStrings);
         	mvSelectField.setSelectedIndex(gamer.moveSelector.ordinal());
         	explorationBiasField = new JTextField(gamer.explorationBias.toString());
+        	SMSelectField = new JComboBox<Object>(SMSelectStrings);
+        	SMSelectField.setSelectedIndex(gamer.SMToUse.ordinal());
 
         	dumpTreeButton = new JButton("Dump Current Tree");
 
@@ -214,6 +225,7 @@ public class MCTSGamer extends StateMachineGamer
 			mvSelectField.addActionListener(this);
 			explorationBiasField.addActionListener(this);
 			dumpTreeButton.addActionListener(this);
+			SMSelectField.addActionListener(this);
 
             this.add(new JLabel("Number of probes:"),
             		new GridBagConstraints(0, 0, 1, 1, 0.0, 0.0,
@@ -260,7 +272,16 @@ public class MCTSGamer extends StateMachineGamer
             				GridBagConstraints.CENTER, GridBagConstraints.BOTH,
             				new Insets(5, 5, 5, 5), 5, 5));
 
-            this.add(dumpTreeButton, new GridBagConstraints(0, 5, 0, 1, 0.0, 0.0,
+            this.add(new JLabel("State Machine:"),
+            		new GridBagConstraints(0, 5, 1, 1, 0.0, 0.0,
+            				GridBagConstraints.EAST, GridBagConstraints.NONE,
+            				new Insets(5, 5, 5, 5), 5, 5));
+            this.add(SMSelectField,
+            		new GridBagConstraints(1, 5, 1, 1, 1.0, 0.0,
+            				GridBagConstraints.CENTER, GridBagConstraints.BOTH,
+            				new Insets(5, 5, 5, 5), 5, 5));
+
+            this.add(dumpTreeButton, new GridBagConstraints(0, 6, 0, 1, 0.0, 0.0,
             			GridBagConstraints.CENTER, GridBagConstraints.BOTH,
             			new Insets(5, 5, 5, 5), 5, 5));
 
@@ -272,6 +293,10 @@ public class MCTSGamer extends StateMachineGamer
 			try {
 				if (e.getSource() == numProbesField) {
 					gamer.numProbes = Integer.valueOf(numProbesField.getText());
+					if (gamer.SMToUse == SMSelection.PROPNET) {
+						gamer.numProbes = 1;
+						numProbesField.setText(gamer.numProbes.toString());
+					}
 				} else if (e.getSource() == timeoutBufferField) {
 					gamer.timeoutBuffer = Long.valueOf(timeoutBufferField.getText());
 				} else if (e.getSource() == memoryThresholdField) {
@@ -282,7 +307,14 @@ public class MCTSGamer extends StateMachineGamer
 					gamer.moveSelector = MoveSelection.values()[selection];
 				} else if (e.getSource() == explorationBiasField) {
 					gamer.explorationBias = Double.valueOf(explorationBiasField.getText());
-				} else if (e.getSource() == dumpTreeButton) {
+				} else if (e.getSource() == SMSelectField) {
+					int selection = SMSelectField.getSelectedIndex();
+					gamer.SMToUse = SMSelection.values()[selection];
+					if (gamer.SMToUse == SMSelection.PROPNET) {
+						gamer.numProbes = 1;
+						numProbesField.setText(gamer.numProbes.toString());
+					}
+				}else if (e.getSource() == dumpTreeButton) {
 					dumpTreeButton.setEnabled(false);
 					gamer.toDotFile("MCTSTree.dot");
 					dumpTreeButton.setEnabled(true);
@@ -294,6 +326,15 @@ public class MCTSGamer extends StateMachineGamer
 
         }
 
+    }
+
+    private Callable<List<Integer>> createDepthCharge(final MachineState m) {
+    	return new Callable<List<Integer>>() {
+    		@Override
+			public List<Integer> call() {
+    			return depthCharge(m);
+    		}
+    	};
     }
 
     @Override
@@ -309,7 +350,16 @@ public class MCTSGamer extends StateMachineGamer
 
     @Override
     public StateMachine getInitialStateMachine() {
-        return new CachedStateMachine(new ProverStateMachine());
+    	StateMachine SM = null;
+
+    	if (SMToUse == SMSelection.PROVER)
+    		SM = new ProverStateMachine();
+    	else if (SMToUse == SMSelection.PROPNET) {
+    		numProbes = 1; // TODO: PropNet is currently not thread-safe
+    		SM = new PropNetStateMachine();
+    	}
+
+        return new CachedStateMachine(SM);
     }
 
     @Override
@@ -484,7 +534,7 @@ public class MCTSGamer extends StateMachineGamer
 		}
 
 		while (current != null) {
-			current.visits++;
+			current.visits += numProbes;
 
 			current.totalScore += scores[pIndex];
 
@@ -546,11 +596,7 @@ public class MCTSGamer extends StateMachineGamer
 
 			expand(selection);
 
-			List<Integer> scoresList = depthCharge(selection.state);
-
-			double [] scores = new double[scoresList.size()];
-			for (int i=0; i<scoresList.size(); i++)
-				scores[i] = scoresList.get(i);
+			double [] scores = runDepthCharge(selection.state);
 
 			backpropagate(selection, scores);
 
@@ -559,6 +605,48 @@ public class MCTSGamer extends StateMachineGamer
 
 		return null;
 
+    }
+
+    private double [] runDepthCharge(MachineState s) {
+
+    	if (numProbes == 1) {
+    		List<Integer> chargeScores = depthCharge(s);
+    		double [] scores = new double[chargeScores.size()];
+    		for (int i=0; i < scores.length; i++)
+    			scores[i] += chargeScores.get(i);
+    		return scores;
+    	}
+
+    	double [] scores = new double[getStateMachine().getRoles().size()];
+
+    	ArrayList<Callable<List<Integer>>> charges = new ArrayList<Callable<List<Integer>>>(numProbes);
+    	for (int i = 0; i < numProbes; i++) {
+    		charges.add(createDepthCharge(s));
+    	}
+
+    	List<Future<List<Integer>>> results = null;
+
+    	try {
+			results = chargeExecutor.invokeAll(charges);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+
+    	for (Future<List<Integer>> result : results) {
+    		List<Integer> chargeScores = null;
+
+			try {
+				chargeScores = result.get();
+			} catch (InterruptedException | ExecutionException e) {
+				e.printStackTrace();
+			}
+
+    		for (int i=0; i < scores.length; i++) {
+    			scores[i] += chargeScores.get(i);
+    		}
+    	}
+
+    	return scores;
     }
 
 	private Move getBestMove() throws MoveDefinitionException {
