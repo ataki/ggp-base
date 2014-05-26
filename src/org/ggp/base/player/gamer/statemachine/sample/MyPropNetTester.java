@@ -7,7 +7,6 @@ import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
 import org.ggp.base.util.statemachine.StateMachine;
-import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
@@ -32,9 +31,9 @@ public final class MyPropNetTester extends SampleGamer
 		List gdlDescription = psm.gdlDescription;
 
 		// The only line you have to adapt in this file
-		StateMachine stateMachineX = new CachedStateMachine(new PropNetStateMachine());
+		StateMachine stateMachineX = new PropNetStateMachine();
 
-		stateMachineX.initialize(gdlDescription);
+		stateMachineX.initialize(psm.gameName, gdlDescription);
 
 		MachineState rootState = stateMachine.getInitialState();
 		MachineState rootStateX = stateMachineX.getInitialState();
@@ -59,6 +58,7 @@ public final class MyPropNetTester extends SampleGamer
 				if(!compare(isTerminal, isTerminalX)){
 					System.out.println("DISCREPANCY between isTerminal values");
 					System.out.println("State : " + state);
+					isTerminalX = stateMachineX.isTerminal(state);
 					abort = true;
 					break;
 				}

@@ -14,7 +14,7 @@ import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
-import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
+import org.ggp.base.util.propnet.factory.CompiledPropNetFactory;
 import org.ggp.base.util.propnet.factory.PropNetFactory;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -34,6 +34,8 @@ public class PropNetStateMachine extends StateMachine {
 	private List<Proposition> ordering;
 	/** The player roles */
 	private List<Role> roles;
+
+	private MachineState currentState = null;
 
 	private void markBases(MachineState s) {
 		Map<GdlSentence, Proposition> baseProps = propNet.getBasePropositions();
@@ -82,9 +84,9 @@ public class PropNetStateMachine extends StateMachine {
 	 * your discretion.
 	 */
 	@Override
-	public void initialize(List<Gdl> description) {
+	public void initialize(String gameName, List<Gdl> description) {
 		try {
-			propNet = OptimizingPropNetFactory.create(description,true);
+			propNet = CompiledPropNetFactory.create(gameName, description,true);
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 			propNet = PropNetFactory.create(description);
@@ -99,12 +101,19 @@ public class PropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public boolean isTerminal(MachineState state) {
-		markBases(state);
-		markActions(null);
-		propagateValues();
+
+		if (!state.equals(currentState)) {
+			markBases(state);
+		//	markActions(null);
+			propagateValues();
+			currentState = state;
+		} else {
+			//markBases(state);
+			propagateValues();
+		}
 
 		Proposition term = propNet.getTerminalProposition();
-
+		term.setValue(term.getSingleInput().getValue());
 		return term.getValue();
 	}
 
@@ -118,7 +127,13 @@ public class PropNetStateMachine extends StateMachine {
 	@Override
 	public int getGoal(MachineState state, Role role)
 	throws GoalDefinitionException {
-		markBases(state);
+
+		if (!state.equals(currentState)) {
+			markBases(state);
+			//propagateValues();
+			currentState = state;
+		}
+
 		Set<Proposition> goalProps = propNet.getGoalPropositions().get(role);
 
 		Proposition goalProposition = null;
@@ -171,10 +186,14 @@ public class PropNetStateMachine extends StateMachine {
 	@Override
 	public List<Move> getLegalMoves(MachineState state, Role role)
 	throws MoveDefinitionException {
-		markBases(state);
-		markActions(null);
 
-		propagateValues();
+		if (!state.equals(currentState)) {
+			markBases(state);
+			markActions(null);
+
+			propagateValues();
+			currentState = state;
+		}
 
 		ArrayList<Move> legalMoves = new ArrayList<Move>();
 
@@ -189,16 +208,62 @@ public class PropNetStateMachine extends StateMachine {
 		return legalMoves;
 	}
 
+	private void propagateInputs(List<Move> moves) {
+		List<GdlSentence> sentences = toDoes(moves);
+		Map<GdlSentence, Proposition> inputProps = propNet.getInputPropositions();
+
+		for (Map.Entry<GdlSentence, Proposition> entry : inputProps.entrySet()) {
+			entry.getValue().setValue(false);
+		}
+
+		for (GdlSentence sent : sentences) {
+			Proposition ip = inputProps.get(sent);
+			if (ip != null)
+				ip.setValue(true);
+
+			LinkedList<Component> processQueue = new LinkedList<Component>();
+			processQueue.addAll(ip.getOutputs());
+
+			HashSet<Component> used = new HashSet<Component>();
+			used.add(ip);
+
+			for (Component o : ip.getOutputs()) {
+				if (!used.contains(o)) {
+					used.add(o);
+					processQueue.add(o);
+				}
+			}
+
+			while (!processQueue.isEmpty()) {
+				Component c = processQueue.pop();
+
+				if (c instanceof Proposition)
+					((Proposition) c).setValue(c.getSingleInput().getValue());
+
+				for (Component o : c.getOutputs()) {
+					if (!used.contains(o)) {
+						used.add(o);
+						processQueue.add(o);
+					}
+				}
+			}
+		}
+
+	}
+
 	/**
 	 * Computes the next state given state and the list of moves.
 	 */
 	@Override
 	public MachineState getNextState(MachineState state, List<Move> moves)
 	throws TransitionDefinitionException {
+
 		markActions(moves);
 		markBases(state);
 		propagateValues();
-		return getStateFromBase();
+
+		currentState = getStateFromBase();
+		return currentState;
 	}
 
 	/**

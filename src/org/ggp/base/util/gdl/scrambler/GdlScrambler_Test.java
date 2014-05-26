@@ -111,8 +111,8 @@ public class GdlScrambler_Test extends TestCase {
     		// but that would be expensive.
 			ProverStateMachine pNormal = new ProverStateMachine();
 			ProverStateMachine pScrambled = new ProverStateMachine();
-			pNormal.initialize(game.getRules());
-			pScrambled.initialize(theScrambledRules);
+			pNormal.initialize(game.getName(), game.getRules());
+			pScrambled.initialize(game.getName(), theScrambledRules);
 			assertEquals(gameKey, pNormal.getRoles().size(), pScrambled.getRoles().size());
 			assertEquals(gameKey, pNormal.getInitialState().getContents().size(), pScrambled.getInitialState().getContents().size());
     	}

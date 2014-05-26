@@ -24,7 +24,7 @@ public class GdlCleanerTests {
         StaticValidator.validateDescription(description);
 
         StateMachine sm = new ProverStateMachine();
-        sm.initialize(description);
+        sm.initialize("test_clean_not_distinct", description);
         MachineState state = sm.getInitialState();
         Assert.assertEquals(1, sm.getRoles().size());
         Role player = sm.getRoles().get(0);

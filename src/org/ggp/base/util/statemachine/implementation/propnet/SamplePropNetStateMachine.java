@@ -40,7 +40,7 @@ public class SamplePropNetStateMachine extends StateMachine {
      * your discretion.
      */
     @Override
-    public void initialize(List<Gdl> description) {
+    public void initialize(String gameName, List<Gdl> description) {
         propNet = PropNetFactory.create(description);
         roles = propNet.getRoles();
         ordering = getOrdering();

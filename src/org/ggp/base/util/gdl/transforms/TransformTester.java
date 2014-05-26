@@ -31,8 +31,8 @@ public class TransformTester {
             newDescription = VariableConstrainer.replaceFunctionValuedVariables(description);
 
             if(description.hashCode() != newDescription.hashCode()) {
-                theReference.initialize(description);
-                theMachine.initialize(newDescription);
+                theReference.initialize(theRepository.getGame(gameKey).getName(), description);
+                theMachine.initialize(theRepository.getGame(gameKey).getName(), newDescription);
                 System.out.println("Detected activation in game " + gameKey + ". Checking consistency: ");
                 StateMachineVerifier.checkMachineConsistency(theReference, theMachine, 10000);
 

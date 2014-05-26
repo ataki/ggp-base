@@ -3,8 +3,10 @@ package org.ggp.base.util.propnet.architecture;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -95,6 +97,8 @@ public final class PropNet
 	/** A helper mapping between input/legal propositions. */
 	private final Map<Proposition, Proposition> legalInputMap;
 
+	private final List<Proposition> ordering;
+
 	/** A helper list of all of the roles. */
 	private final List<Role> roles;
 
@@ -124,6 +128,7 @@ public final class PropNet
 		this.initProposition = recordInitProposition();
 		this.terminalProposition = recordTerminalProposition();
 		this.legalInputMap = makeLegalInputMap();
+		this.ordering = makeOrdering();
 	}
 
 	public List<Role> getRoles()
@@ -241,6 +246,10 @@ public final class PropNet
 	public Proposition getTerminalProposition()
 	{
 		return terminalProposition;
+	}
+
+	public List<Proposition> getOrdering() {
+		return ordering;
 	}
 
 	/**
@@ -548,5 +557,67 @@ public final class PropNet
 		//These are actually unnecessary...
 		//c.removeAllInputs();
 		//c.removeAllOutputs();
+	}
+
+	public List<Proposition> makeOrdering()
+	{
+		// List to contain the topological ordering.
+		List<Proposition> order = new LinkedList<Proposition>();
+
+		// All of the components in the PropNet
+		List<Component> componentList = new ArrayList<Component>(components);
+
+		// All of the propositions in the PropNet.
+		List<Proposition> propositionList = new ArrayList<Proposition>(propositions);
+
+		HashSet<Proposition> usedPropositions = new HashSet<Proposition>();
+		HashSet<Proposition> unusedPropositions = new HashSet<Proposition>();
+
+		usedPropositions.addAll(basePropositions.values());
+		usedPropositions.addAll(inputPropositions.values());
+
+		if (initProposition != null)
+			usedPropositions.add(initProposition);
+
+		unusedPropositions.addAll(propositionList);
+		unusedPropositions.removeAll(usedPropositions);
+
+		while(!unusedPropositions.isEmpty()) {
+
+			for (Proposition unusedP : unusedPropositions) {
+
+				HashSet<Proposition> dependencies = new HashSet<Proposition>();
+				HashSet<Component> componentDependencies = new HashSet<Component>();
+
+				LinkedList<Component> dependencyQueue = new LinkedList<Component>();
+
+				dependencyQueue.add(unusedP);
+
+				while(!dependencyQueue.isEmpty()) {
+					Component dependency = dependencyQueue.pop();
+
+					for (Component input : dependency.getInputs()) {
+						if (input instanceof Proposition)
+							dependencies.add((Proposition)input);
+						else {
+							if (!componentDependencies.contains(input)) {
+								componentDependencies.add(input);
+								dependencyQueue.addLast(input);
+							}
+						}
+
+					}
+				}
+
+				if (usedPropositions.containsAll(dependencies)) {
+					usedPropositions.add(unusedP);
+					unusedPropositions.remove(unusedP);
+					order.add(unusedP);
+					break;
+				}
+			}
+		}
+
+		return order;
 	}
 }

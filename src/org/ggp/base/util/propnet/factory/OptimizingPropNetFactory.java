@@ -239,7 +239,7 @@ public class OptimizingPropNetFactory {
 			System.out.println("Initializing propnet object...");
 		//Make it look the same as the PropNetFactory results, until we decide
 		//how we want it to look
-		normalizePropositions(componentSet);
+		//normalizePropositions(componentSet);
 		PropNet propnet = new PropNet(roles, componentSet);
 		if(verbose) {
 			System.out.println("Done setting up propnet; took " + (System.currentTimeMillis() - startTime) + "ms, has " + componentSet.size() + " components and " + propnet.getNumLinks() + " links");
