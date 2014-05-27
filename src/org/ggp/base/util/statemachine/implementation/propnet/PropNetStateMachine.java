@@ -26,7 +26,6 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.prover.query.ProverQueryBuilder;
 
 
-@SuppressWarnings("unused")
 public class PropNetStateMachine extends StateMachine {
 	/** The underlying proposition network  */
 	private PropNet propNet;

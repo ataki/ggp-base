@@ -10,6 +10,7 @@ import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +43,7 @@ public class CompiledPropNetFactory {
 	private static final String PACKAGE = "org.ggp.base.util.propnet.architecture";
 	private static final String PACKAGE_HEADER = "package "+PACKAGE+";";
 	private static final String INCLUDES = "import org.ggp.base.util.propnet.architecture.CompiledPropNet;\n"
+										 + "import org.ggp.base.util.propnet.architecture.PropNet;\n"
 										 + "import org.ggp.base.util.propnet.architecture.components.Proposition;\n"
 										 + "import java.util.Map;";
 
@@ -144,11 +146,18 @@ public class CompiledPropNetFactory {
 		writeLine(output, "\t}");
 	}
 
+	// For debuggging
 	private static void generateMappingDocument(BufferedWriter output, Map<Proposition,Integer> indexMap) throws IOException {
-		writeLine(output, "\t/******************** PROPOSITION MAPPING:******************************");
+
+		Proposition [] sortedList = new Proposition[indexMap.size()];
 
 		for (Map.Entry<Proposition,Integer> e: indexMap.entrySet()) {
-			writeLine(output,"\t* "+e.getValue()+" -> "+e.getKey().getName().toString());
+			sortedList[e.getValue()] = e.getKey();
+		}
+
+		writeLine(output, "\t/******************** PROPOSITION MAPPING:******************************");
+		for (int i=0; i < sortedList.length; i++) {
+			writeLine(output,"\t* "+ i +" -> "+sortedList[i].getName().toString());
 		}
 		writeLine(output, "\t************************************************************************/");
 	}
@@ -175,8 +184,8 @@ public class CompiledPropNetFactory {
 
 		writeLine(output, "public final class "+className+" extends CompiledPropNet {");
 
-		writeLine(output, "\tpublic "+className+"(int size, Map<Proposition,Integer> indexMap) {");
-		writeLine(output, "\t\tsuper(size,indexMap);");
+		writeLine(output, "\tpublic "+className+"(int size, Map<Proposition,Integer> indexMap, PropNet p) {");
+		writeLine(output, "\t\tsuper(size,indexMap, p);");
 		writeLine(output, "\t}");
 
 		generateMappingDocument(output, indexMap);
@@ -192,13 +201,35 @@ public class CompiledPropNetFactory {
 	private static HashMap<Proposition, Integer> getPropIndices(PropNet net) {
 		HashMap<Proposition, Integer> indexMap = new HashMap<Proposition, Integer>();
 
+		HashSet<Proposition> baseProps = new HashSet<Proposition>(net.getBasePropositions().values());
+		HashSet<Proposition> inputProps = new HashSet<Proposition>(net.getInputPropositions().values());
+
 		Set<Proposition> props = net.getPropositions();
-		Iterator<Proposition> iter = props.iterator();
+		Iterator<Proposition> iter = baseProps.iterator();
 
 		int i = 0;
+
+		// Put base propositions at the beginning of the vector
 		while (iter.hasNext()) {
 			indexMap.put(iter.next(), i);
 			i++;
+		}
+
+		iter = inputProps.iterator();
+
+		while (iter.hasNext()) {
+			indexMap.put(iter.next(),i);
+			i++;
+		}
+
+		iter = props.iterator();
+		while (iter.hasNext()) {
+			Proposition p = iter.next();
+
+			if (!baseProps.contains(p) && !inputProps.contains(p)) {
+				indexMap.put(p, i);
+				i++;
+			}
 		}
 
 		return indexMap;
@@ -252,7 +283,7 @@ public class CompiledPropNetFactory {
 				// Create a new instance...
 				Object obj = null;
 				try {
-					obj = loadedClass.getDeclaredConstructor(int.class,Map.class).newInstance(p.getPropositions().size(), indexMap);
+					obj = loadedClass.getDeclaredConstructor(int.class,Map.class, PropNet.class).newInstance(p.getPropositions().size(), indexMap, p);
 				} catch (NoSuchMethodException | InvocationTargetException e) {
 					e.printStackTrace();
 				}
@@ -262,13 +293,6 @@ public class CompiledPropNetFactory {
 				} else {
 					System.out.println("Unable to instantiate compiled propNet");
 				}
-				// Santity check
-				//if (obj instanceof DoStuff) {
-				// Cast to the DoStuff interface
-				//  DoStuff stuffToDo = (DoStuff)obj;
-				// Run it baby
-				//stuffToDo.doStuff();
-				//}
 				/************************************************************************************************* Load and execute **/
 			} else {
 				for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics.getDiagnostics()) {
