@@ -9,7 +9,7 @@ import org.ggp.base.util.statemachine.StateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
-import org.ggp.base.util.statemachine.implementation.propnet.PropNetStateMachine;
+import org.ggp.base.util.statemachine.implementation.propnet.CompiledPropNetStateMachine;
 
 /**
  * MySpeedTester tries to compute how many states/second
@@ -21,7 +21,7 @@ public final class MySpeedTester extends SampleGamer
 // Replace with your own implementation
 	@Override
 	public StateMachine getInitialStateMachine() {
-		return new PropNetStateMachine();
+		return new CompiledPropNetStateMachine();
 	}
 
 	@Override

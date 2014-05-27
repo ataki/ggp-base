@@ -42,7 +42,7 @@ import org.ggp.base.util.statemachine.cache.CachedStateMachine;
 import org.ggp.base.util.statemachine.exceptions.GoalDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.MoveDefinitionException;
 import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
-import org.ggp.base.util.statemachine.implementation.propnet.PropNetStateMachine;
+import org.ggp.base.util.statemachine.implementation.propnet.CompiledPropNetStateMachine;
 import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
 public class MCTSGamer extends StateMachineGamer
@@ -356,7 +356,8 @@ public class MCTSGamer extends StateMachineGamer
     		SM = new ProverStateMachine();
     	else if (SMToUse == SMSelection.PROPNET) {
     		numProbes = 1; // TODO: PropNet is currently not thread-safe
-    		SM = new PropNetStateMachine();
+    		//SM = new PropNetStateMachine();
+    		SM = new CompiledPropNetStateMachine();
     	}
 
         return new CachedStateMachine(SM);

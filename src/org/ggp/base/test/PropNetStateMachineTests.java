@@ -13,14 +13,14 @@ import org.ggp.base.util.gdl.grammar.GdlTerm;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
 import org.ggp.base.util.statemachine.Role;
-import org.ggp.base.util.statemachine.implementation.propnet.PropNetStateMachine;
+import org.ggp.base.util.statemachine.implementation.propnet.CompiledPropNetStateMachine;
 import org.junit.Assert;
 import org.junit.Test;
 
 
 public class PropNetStateMachineTests extends Assert {
 
-    protected final PropNetStateMachine sm = new PropNetStateMachine();
+    protected final CompiledPropNetStateMachine sm = new CompiledPropNetStateMachine();
     protected final GdlConstant C1 = GdlPool.getConstant("1");
     protected final GdlConstant C2 = GdlPool.getConstant("2");
     protected final GdlConstant C3 = GdlPool.getConstant("3");

@@ -48,8 +48,13 @@ public class CompiledPropNetFactory {
 										 + "import java.util.Map;";
 
 	private static final String UPDATE_DECL = "\tpublic void update() {";
+	private static final String UPDATE_SEGMENT_DECL = "\tprivate void update%d() {";
+	private static final String UPDATE_BASES_DECL = "\tpublic void updateBases() {";
+	private static final String UPDATE_SEGMENT_CALL = "\t\tupdate%d();";
 
 	private static final String CLASS_POSTFIX = "PropNet";
+
+	private static final int SEGMENT_SIZE = 1000;
 
 	/**
 	 * Creates a PropNet for the game with the given description.
@@ -57,16 +62,16 @@ public class CompiledPropNetFactory {
 	 * @throws InterruptedException if the thread is interrupted during
 	 * PropNet creation.
 	 */
-	public static PropNet create(String gameName, List<Gdl> description) throws InterruptedException {
-		return OptimizingPropNetFactory.create(description, false);
+	public static CompiledPropNet create(String gameName, List<Gdl> description) throws InterruptedException {
+		return create(gameName, description, false);
 	}
 
-	public static PropNet create(String gameName, List<Gdl> description, boolean verbose) throws InterruptedException {
+	public static CompiledPropNet create(String gameName, List<Gdl> description, boolean verbose) throws InterruptedException {
 		PropNet opt = OptimizingPropNetFactory.create(description, verbose);
 
-		compile(gameName, opt);
+		CompiledPropNet cProp = compile(gameName, opt);
 
-		return opt;
+		return cProp;
 	}
 
 	private static void writeLine(BufferedWriter out, String line) throws IOException {
@@ -135,17 +140,59 @@ public class CompiledPropNetFactory {
 		return sb.toString();
 	}
 
+	private static int generateSegmentedUpdateFn(BufferedWriter output, PropNet p, Map<Proposition, Integer> indexMap) throws IOException {
+
+		int i = 0;
+		int numSegments = 0;
+		List<Proposition> ordering = p.getOrdering();
+		while (i < ordering.size()) {
+			if (i % SEGMENT_SIZE == 0) {
+				if (numSegments > 0)
+					writeLine(output, "\t}\n");
+				writeLine(output, String.format(UPDATE_SEGMENT_DECL, numSegments));
+				numSegments++;
+			}
+			writeLine(output,generateUpdateLine(ordering.get(i),p,indexMap));
+			i++;
+		}
+
+		writeLine(output, "\t}\n");
+
+		return numSegments;
+	}
+
 	private static void generateUpdateFn(BufferedWriter output, PropNet p, Map<Proposition,Integer> indexMap) throws IOException {
 
-		writeLine(output, UPDATE_DECL);
 
-		for (Proposition prop: p.getOrdering()) {
-			writeLine(output, generateUpdateLine(prop, p,indexMap));
+
+		if (p.getOrdering().size() > SEGMENT_SIZE) {
+			int numSegments = generateSegmentedUpdateFn(output, p, indexMap);
+			writeLine(output, UPDATE_DECL);
+			for (int i = 0; i < numSegments; i++) {
+				writeLine(output,String.format(UPDATE_SEGMENT_CALL, i));
+			}
+			writeLine(output, "\t}");
+		} else {
+			writeLine(output, UPDATE_DECL);
+			for (Proposition prop: p.getOrdering()) {
+				writeLine(output, generateUpdateLine(prop, p,indexMap));
+			}
+			writeLine(output, "\t}");
+		}
+
+
+	}
+
+	private static void generateUpdateBasesFn(BufferedWriter output, PropNet p, Map<Proposition, Integer> indexMap) throws IOException {
+
+		writeLine(output, UPDATE_BASES_DECL);
+
+		for (Proposition prop : p.getBasePropositions().values()) {
+			writeLine(output,generateUpdateLine(prop,p,indexMap));
 		}
 
 		writeLine(output, "\t}");
 	}
-
 	// For debuggging
 	private static void generateMappingDocument(BufferedWriter output, Map<Proposition,Integer> indexMap) throws IOException {
 
@@ -183,14 +230,19 @@ public class CompiledPropNetFactory {
 		writeLine(output, "");
 
 		writeLine(output, "public final class "+className+" extends CompiledPropNet {");
+		writeLine(output, "");
 
 		writeLine(output, "\tpublic "+className+"(int size, Map<Proposition,Integer> indexMap, PropNet p) {");
 		writeLine(output, "\t\tsuper(size,indexMap, p);");
 		writeLine(output, "\t}");
+		writeLine(output, "");
 
 		generateMappingDocument(output, indexMap);
 
 		generateUpdateFn(output, p, indexMap);
+		writeLine(output, "");
+
+		generateUpdateBasesFn(output, p, indexMap);
 
 		writeLine(output, "}");
 
@@ -235,7 +287,7 @@ public class CompiledPropNetFactory {
 		return indexMap;
 	}
 
-	private static PropNet compile(String gameName, PropNet p) {
+	private static CompiledPropNet compile(String gameName, PropNet p) {
 
 		File srcFile = null;
 		HashMap<Proposition, Integer> indexMap = getPropIndices(p);
@@ -290,6 +342,7 @@ public class CompiledPropNetFactory {
 
 				if (obj instanceof CompiledPropNet) {
 					System.out.println("Instantiated compiled propNet successfully");
+					return (CompiledPropNet)obj;
 				} else {
 					System.out.println("Unable to instantiate compiled propNet");
 				}
