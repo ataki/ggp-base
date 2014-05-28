@@ -45,6 +45,9 @@ import org.ggp.base.util.statemachine.exceptions.TransitionDefinitionException;
 import org.ggp.base.util.statemachine.implementation.propnet.CompiledPropNetStateMachine;
 import org.ggp.base.util.statemachine.implementation.prover.ProverStateMachine;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+
 public class MCTSGamer extends StateMachineGamer
 {
     private List<Role> gameRoles = null;
@@ -59,7 +62,8 @@ public class MCTSGamer extends StateMachineGamer
     // This map allows us to keep the previous updates in memory when playing a game.
     // There does not seem to be a significant boost due to this, but it does not
     // cost us too much memory either.
-	private HashMap<MachineState, MCTSNode> nodeMap = null;
+	//private HashMap<MachineState, MCTSNode> nodeMap = null;
+	private Cache<MachineState, MCTSNode> nodeMap = null;
 
 	private MoveSelection moveSelector = MoveSelection.MIXED;
 
@@ -85,6 +89,9 @@ public class MCTSGamer extends StateMachineGamer
 	// Parallelize depth-charges
 	private final ExecutorService chargeExecutor = Executors.newCachedThreadPool();
 	private Integer numProbes = 4;
+
+	private static final String MOVE_START = "*************** Move %3d ***************";
+	private static final String MOVE_END   = "*************** End %3d ****************";
 
 	private class MCTSNode {
 		MachineState state;
@@ -125,12 +132,11 @@ public class MCTSGamer extends StateMachineGamer
 		@Override
 		public String toString() {
 			StringBuilder sb = new StringBuilder();
-			sb.append("State: "+state+"\n");
-			sb.append("Visits: "+visits+"\n");
-			sb.append("TotalScore: "+totalScore+"\t"+"oScore:"+opponentScore+"\n");
-			sb.append("Num children: "+getNumChildren()+"\n");
-			sb.append("Parent Move: "+parentMove+"\n");
-
+			sb.append("State:"+state);
+			sb.append(" Visits:"+visits);
+			sb.append(" TotalScore:"+totalScore+" "+"oScore:"+opponentScore);
+			sb.append(" Num children:"+getNumChildren());
+			sb.append(" Parent Move:"+parentMove);
 			return sb.toString();
 		}
 
@@ -508,7 +514,7 @@ public class MCTSGamer extends StateMachineGamer
 			Move 	 parentMove    = entry.getKey();
 
 			for (MachineState s : entry.getValue()) {
-				child = nodeMap.get(s);
+				child = nodeMap.getIfPresent(s);
 				if (child == null) {
 					child = new MCTSNode(s,node,parentMove);
 					nodeMap.put(child.state, child);
@@ -560,7 +566,13 @@ public class MCTSGamer extends StateMachineGamer
         }
 
 		if (nodeMap == null) {
-			nodeMap = new HashMap<MachineState, MCTSNode>();
+			//nodeMap = new HashMap<MachineState, MCTSNode>();
+			nodeMap = CacheBuilder.<MachineState,MCTSNode>newBuilder()
+					.maximumSize(1000000)
+					.expireAfterAccess(1, TimeUnit.MINUTES)
+					.weakKeys()
+					.weakValues()
+					.<MachineState,MCTSNode>build();
 		}
 
 		numExpansions = 0;
@@ -571,7 +583,7 @@ public class MCTSGamer extends StateMachineGamer
 
 
 
-		MCTSNode currentNode = nodeMap.get(getCurrentState());
+		MCTSNode currentNode = nodeMap.getIfPresent(getCurrentState());
 		if (currentNode == null) {
 			currentNode = new MCTSNode(getCurrentState(), null, null);
 			nodeMap.put(getCurrentState(), currentNode);
@@ -582,12 +594,11 @@ public class MCTSGamer extends StateMachineGamer
 		double usedPercent=(double)(Runtime.getRuntime().totalMemory()
 				-Runtime.getRuntime().freeMemory())*100.0/Runtime.getRuntime().maxMemory();
 
-		System.out.println("Used Memory: "+usedPercent+"%");
-		System.out.println("MEMORY THRESHOLD: "+memoryThreshold);
+		log(String.format("Used Memory: %.3f%%",usedPercent));
 
 		expandNewNodes = true;
 		if (usedPercent >= memoryThreshold) {
-			System.out.println("Memory threshold exceeded - new states will not be expanded");
+			log("Memory threshold exceeded - new states will not be expanded");
 			expandNewNodes = false;
 		}
 
@@ -652,14 +663,13 @@ public class MCTSGamer extends StateMachineGamer
 
 	private Move getBestMove() throws MoveDefinitionException {
 
-		MCTSNode current = nodeMap.get(getCurrentState());
+		MCTSNode current = nodeMap.getIfPresent(getCurrentState());
 
 		Move   bestMove  = null;
 		double score = Double.NEGATIVE_INFINITY;
 
-		log("**********************Best Move******************************\n");
-		GamerLogger.log("MCTSGamer", "Current State:\n");
-		GamerLogger.log("MCTSGamer", current.toString());
+		log("Current State:");
+		log(current.toString());
 		for (Map.Entry<Move, ArrayList<MCTSNode>> siblings : current.children.entrySet()) {
 			double   siblingScore = Double.POSITIVE_INFINITY;
 
@@ -703,14 +713,12 @@ public class MCTSGamer extends StateMachineGamer
 			}
 		}
 
-		GamerLogger.log("MCTSGamer", "BEST SCORE: "+score+"\n");
-
-		log("***********************************************************************\n");
+		log("BEST SCORE: "+score);
 
 		if (bestMove != null)
 			return bestMove;
 		else {
-			System.out.println("No good move found, choosing randomly");
+			log("No good move found, choosing randomly\n");
 			return getRandomMove();
 		}
 
@@ -731,7 +739,8 @@ public class MCTSGamer extends StateMachineGamer
         // We get the current start time
         long start = System.currentTimeMillis();
 
-        System.out.println("TIMEOUT: "+(timeout-start));
+        log(String.format(MOVE_START, numMovesMade));
+        log("TIMEOUT: "+(timeout-start));
 
         keepRunning = true;
         Future<Move> task = threadExecutor.submit(new Callable<Move>() {
@@ -755,10 +764,11 @@ public class MCTSGamer extends StateMachineGamer
             selection = getRandomMove();
         }
 
-        numMovesMade++;
-		log("Num Expansions: "+numExpansions);
+        log("Num Expansions: "+numExpansions);
 		log("Size of Node-map: "+nodeMap.size());
+		log(String.format(MOVE_END, numMovesMade));
 
+		numMovesMade++;
         // We get the end time
         // It is mandatory that stop<timeout
         long stop = System.currentTimeMillis();
@@ -796,7 +806,7 @@ public class MCTSGamer extends StateMachineGamer
 
 	private String toDot() {
 		StringBuilder sb = new StringBuilder();
-		MCTSNode root = nodeMap.get(getCurrentState());
+		MCTSNode root = nodeMap.getIfPresent(getCurrentState());
 
 		sb.append("digraph MCTSTree\n{\n");
 		if (root != null)
