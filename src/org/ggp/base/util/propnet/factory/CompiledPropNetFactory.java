@@ -7,8 +7,10 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -52,9 +54,9 @@ public class CompiledPropNetFactory {
 	private static final String UPDATE_BASES_DECL = "\tpublic void updateBases() {";
 	private static final String UPDATE_SEGMENT_CALL = "\t\tupdate%d();";
 
-	private static final String CLASS_POSTFIX = "PropNet";
+	private static final String CLASS_POSTFIX = "PropNet_%s";
 
-	private static final int SEGMENT_SIZE = 1000;
+	private static final int SEGMENT_SIZE = 500;
 
 	/**
 	 * Creates a PropNet for the game with the given description.
@@ -69,6 +71,8 @@ public class CompiledPropNetFactory {
 	public static CompiledPropNet create(String gameName, List<Gdl> description, boolean verbose) throws InterruptedException {
 		PropNet opt = OptimizingPropNetFactory.create(description, verbose);
 
+		opt.renderToFile("MultipleTicTacToe.dot");
+
 		CompiledPropNet cProp = compile(gameName, opt);
 
 		return cProp;
@@ -81,10 +85,10 @@ public class CompiledPropNetFactory {
 	private static StringBuilder generateAssignment(Component c, Map<Proposition,Integer> indexMap) {
 		StringBuilder sb = new StringBuilder();
 
-		sb.append("(byte)");
+		//sb.append("(byte)");
 
 		if (c instanceof Not) {
-			sb.append("(1 ^ ");
+			sb.append("(!");
 		}
 
 		sb.append("(");
@@ -94,22 +98,22 @@ public class CompiledPropNetFactory {
 		} else if (c instanceof And) {
 			for (Component in: c.getInputs()) {
 				sb.append(generateAssignment(in, indexMap));
-				sb.append(" & ");
+				sb.append(" && ");
 			}
 			sb.delete(sb.length()-3, sb.length());
 		} else if (c instanceof Or) {
 			for (Component in: c.getInputs()) {
 				sb.append(generateAssignment(in, indexMap));
-				sb.append(" | ");
+				sb.append(" || ");
 			}
 			sb.delete(sb.length()-3, sb.length());
 		} else if (c instanceof Transition) {
 			sb.append(generateAssignment(c.getSingleInput(), indexMap));
 		} else if (c instanceof Constant) {
 			if (c.getValue())
-				sb.append("1");
+				sb.append("true");
 			else
-				sb.append("0");
+				sb.append("false");
 		} else if (c instanceof Not) {
 			sb.append(generateAssignment(c.getSingleInput(), indexMap));
 		}
@@ -209,9 +213,7 @@ public class CompiledPropNetFactory {
 		writeLine(output, "\t************************************************************************/");
 	}
 
-	private static File generateSourceFile(String gameName, PropNet p, Map<Proposition, Integer> indexMap) throws IOException {
-
-		String className = gameName+CLASS_POSTFIX;
+	private static File generateSourceFile(String className, PropNet p, Map<Proposition, Integer> indexMap) throws IOException {
 
 		File propNetSrcFile = new File(SRC_DIR+className+".java");
 		BufferedWriter output = null;
@@ -291,8 +293,11 @@ public class CompiledPropNetFactory {
 
 		File srcFile = null;
 		HashMap<Proposition, Integer> indexMap = getPropIndices(p);
+		String classPostfix = String.format(CLASS_POSTFIX, new SimpleDateFormat("yyyyMMdd_HHmmss").format(Calendar.getInstance().getTime()));
+		String className = gameName+classPostfix;
+
 		try {
-			srcFile = generateSourceFile(gameName, p, indexMap);
+			srcFile = generateSourceFile(className, p, indexMap);
 		} catch (IOException e) {
 			e.printStackTrace();
 			return null;
@@ -331,7 +336,7 @@ public class CompiledPropNetFactory {
 				// classes, this should point to the top of the package structure!
 				URLClassLoader classLoader = new URLClassLoader(new URL[]{new File("./").toURI().toURL()});
 				// Load the class from the classloader by name....
-				Class<?> loadedClass = classLoader.loadClass(PACKAGE+"."+gameName+CLASS_POSTFIX);
+				Class<?> loadedClass = classLoader.loadClass(PACKAGE+"."+className);
 				// Create a new instance...
 				Object obj = null;
 				try {
@@ -339,6 +344,9 @@ public class CompiledPropNetFactory {
 				} catch (NoSuchMethodException | InvocationTargetException e) {
 					e.printStackTrace();
 				}
+
+				classLoader.close();
+				classLoader = null;
 
 				if (obj instanceof CompiledPropNet) {
 					System.out.println("Instantiated compiled propNet successfully");

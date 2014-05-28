@@ -4,9 +4,9 @@ import java.util.Arrays;
 
 public class PropNetMachineState extends MachineState {
 
-    private final byte[] baseProps;
+    private final boolean[] baseProps;
 
-    public PropNetMachineState(byte[] baseProps)
+    public PropNetMachineState(boolean[] baseProps)
     {
         this.baseProps = baseProps;
     }
@@ -16,7 +16,7 @@ public class PropNetMachineState extends MachineState {
 		return new PropNetMachineState(baseProps);
 	}
 
-	public byte [] getBaseProps() {
+	public boolean [] getBaseProps() {
 		return baseProps;
 	}
 

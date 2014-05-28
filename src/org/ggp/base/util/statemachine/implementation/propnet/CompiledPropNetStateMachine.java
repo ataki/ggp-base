@@ -35,6 +35,11 @@ public class CompiledPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public void initialize(String gameName, List<Gdl> description) {
+
+		currentState = null;
+		roles = null;
+		propNet = null;
+
 		try {
 			propNet = CompiledPropNetFactory.create(gameName, description,true);
 		} catch (InterruptedException e) {
@@ -42,6 +47,8 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		}
 
 		roles = propNet.getRoles();
+
+		System.out.println("Compiled PropNet StateMachine Initialized Successfully");
 
 	}
 
@@ -61,7 +68,7 @@ public class CompiledPropNetStateMachine extends StateMachine {
 			currentState = state;
 		}
 
-		return propNet.getProp(propNet.getTermProposition()) == 1;
+		return propNet.getProp(propNet.getTermProposition());
 	}
 
 	/**
@@ -91,7 +98,7 @@ public class CompiledPropNetStateMachine extends StateMachine {
 
 		int goal = 0;
 		for (Integer gp : goalProps) {
-			if (propNet.getProp(gp) == 1) {
+			if (propNet.getProp(gp)) {
 				if (foundGoal)
 					throw new GoalDefinitionException(state, role);
 
@@ -114,6 +121,8 @@ public class CompiledPropNetStateMachine extends StateMachine {
 	 */
 	@Override
 	public MachineState getInitialState() {
+
+		System.out.println("CompiledPropNetSM: Generating Initial State");
 
 		propNet.clear();
 		propNet.setTrue(propNet.getInitProposition());
@@ -148,7 +157,7 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		Map<Integer, GdlTerm> legalToGdlMap = propNet.getLegalToGdlMap();
 
 		for (Integer lp : legals) {
-			if (propNet.getProp(lp) == 1)
+			if (propNet.getProp(lp))
 				legalMoves.add(new PropNetMove(legalInputMap.get(lp),legalToGdlMap.get(lp)));
 		}
 

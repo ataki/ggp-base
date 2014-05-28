@@ -17,7 +17,7 @@ import org.ggp.base.util.statemachine.Role;
 
 public abstract class CompiledPropNet {
 
-	protected byte[] network;
+	protected boolean[] network;
 	protected final Map<Proposition, Integer> indexMap;
 
 	protected final List<Integer> baseProps;
@@ -79,7 +79,7 @@ public abstract class CompiledPropNet {
 	}
 
 	public CompiledPropNet(int size, Map<Proposition, Integer> indexMap, PropNet p) {
-		network = new byte[size];
+		network = new boolean[size];
 		this.indexMap = indexMap;
 
 		baseProps = recordBaseProps(p);
@@ -225,22 +225,22 @@ public abstract class CompiledPropNet {
 	}
 
 	public void setTrue(int propIndex) {
-		network[propIndex] = (byte)1;
+		network[propIndex] = true;
 	}
 
-	public byte getProp(int propIndex) {
+	public boolean getProp(int propIndex) {
 		return network[propIndex];
 	}
 
 	public void clear() {
-		network = new byte[network.length];
+		network = new boolean[network.length];
 	}
 
-	public byte [] getBaseProps() {
+	public boolean [] getBaseProps() {
 		return Arrays.copyOfRange(network, 0, baseProps.size());
 	}
 
-	public void setBaseProps(byte [] bases) {
+	public void setBaseProps(boolean [] bases) {
 		System.arraycopy(bases, 0, network, 0, bases.length);
 	}
 
