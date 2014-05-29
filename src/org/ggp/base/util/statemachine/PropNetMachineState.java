@@ -24,7 +24,7 @@ public class PropNetMachineState extends MachineState {
     @Override
 	public int hashCode()
     {
-        return baseProps.hashCode();
+        return Arrays.hashCode(baseProps);
     }
 
     @Override
