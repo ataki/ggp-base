@@ -26,6 +26,22 @@ public final class Or extends Component
 		return false;
 	}
 
+	@Override
+	public int getAmbiguousValue() {
+		int retVal = 0;
+
+		for (Component component : getInputs()) {
+			int val = component.getAmbiguousValue();
+			if (val == Component.AMBIGUOUS) {
+				retVal = Component.AMBIGUOUS;
+			} else if (val == 1) {
+				return 1;
+			}
+		}
+
+		return retVal;
+	}
+
 	/**
 	 * @see org.ggp.base.util.propnet.architecture.Component#toString()
 	 */

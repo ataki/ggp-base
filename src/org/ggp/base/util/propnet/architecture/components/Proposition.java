@@ -14,6 +14,12 @@ public final class Proposition extends Component
 	/** The value of the Proposition. */
 	private boolean value;
 
+	private int ambiguousValue;
+
+	public static enum PropType {BASE,INPUT,VIEW};
+
+	private PropType type;
+
 	/**
 	 * Creates a new Proposition with name <tt>name</tt>.
 	 *
@@ -24,6 +30,13 @@ public final class Proposition extends Component
 	{
 		this.name = name;
 		this.value = false;
+		this.type = PropType.VIEW;
+	}
+
+	public Proposition(GdlSentence name, PropType t) {
+		this.name = name;
+		this.value = false;
+		this.type = t;
 	}
 
 	/**
@@ -69,6 +82,17 @@ public final class Proposition extends Component
 	public void setValue(boolean value)
 	{
 		this.value = value;
+	}
+
+	@Override
+	public int getAmbiguousValue()
+	{
+		return ambiguousValue;
+	}
+
+	public void setAmbiguousValue(int val)
+	{
+		ambiguousValue = val;
 	}
 
 	/**

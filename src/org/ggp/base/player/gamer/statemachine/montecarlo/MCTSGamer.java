@@ -82,6 +82,7 @@ public class MCTSGamer extends StateMachineGamer {
 	private Double explorationBias = 40.0;
 
 	// Some statistics about the player
+	private long numPrevExpansions = 0;
 	private long numExpansions = 0;
 	private long numMovesMade = 0;
 
@@ -104,6 +105,8 @@ public class MCTSGamer extends StateMachineGamer {
 	private static final String MOVE_END = "*************** End %3d ****************";
 
 	private static MCTSConfigPanel cPanel = null;
+
+	private static final double INHIBITOR_PENALTY = 0.7;
 
 	private class MCTSNode {
 		MachineState state;
@@ -594,6 +597,11 @@ public class MCTSGamer extends StateMachineGamer {
 			}
 		}
 
+		if (getStateMachine().isGoalInhibitor(getRole(), node.state)){
+			log("Inhibitor state found; Applying penalty");
+			node.visits = (int) (INHIBITOR_PENALTY * numPrevExpansions);
+		}
+
 		// log("**********************************************************\n");
 	}
 
@@ -632,6 +640,7 @@ public class MCTSGamer extends StateMachineGamer {
 			opponent = getOpponent();
 		}
 
+		numPrevExpansions = numExpansions;
 		numExpansions = 0;
 
 		List<Move> moves = getStateMachine().getLegalMoves(getCurrentState(),

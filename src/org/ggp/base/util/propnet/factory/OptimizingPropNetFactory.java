@@ -234,6 +234,7 @@ public class OptimizingPropNetFactory {
 		components = null;
 		negations = null;
 		completeComponentSet(componentSet);
+		removeExtraNots(componentSet, verbose);
 		ConcurrencyUtils.checkForInterruption();
 		if(verbose)
 			System.out.println("Initializing propnet object...");
@@ -247,6 +248,96 @@ public class OptimizingPropNetFactory {
 		}
 		//System.out.println(propnet);
 		return propnet;
+	}
+
+	private static void removeExtraNots(Set<Component> components, boolean verbose) {
+
+		if (verbose)
+			System.out.print("Apply Demorgan's Law to remove extra not-gates... ");
+
+		Set<Component> finalRemoved = new HashSet<Component>();
+		Set<Component> finalAdded   = new HashSet<Component>();
+
+		for (Component c: components) {
+			if (c instanceof And) {
+				boolean allInputsNegated = true;
+				Set<Component> normalInputs = new HashSet<Component>();
+				Set<Component> toBeRemoved = new HashSet<Component>();
+
+				for (Component in : c.getInputs()) {
+					if (!(in instanceof Not)) {
+						allInputsNegated = false;
+						break;
+					} else {
+						normalInputs.addAll(in.getInputs());
+						toBeRemoved.add(in);
+					}
+				}
+
+				if (!allInputsNegated)
+					continue;
+
+				Or newOr = new Or();
+				for (Component normalIn : normalInputs) {
+					assert normalIn.getOutputs().size() == 1;
+					newOr.addInput(normalIn);
+					normalIn.removeAllOutputs();
+					normalIn.addOutput(newOr);
+				}
+
+				Not newNot = new Not();
+				newOr.addOutput(newNot);
+				newNot.addInput(newOr);
+				newNot.addOutput(c.getSingleOutput());
+
+				finalRemoved.addAll(toBeRemoved);
+				finalRemoved.add(c);
+				finalAdded.add(newOr);
+				finalAdded.add(newNot);
+
+			} else if (c instanceof Or) {
+				boolean allInputsNegated = true;
+
+				Set<Component> normalInputs = new HashSet<Component>();
+				Set<Component> toBeRemoved = new HashSet<Component>();
+
+				for (Component in : c.getInputs()) {
+					if (!(in instanceof Not)) {
+						allInputsNegated = false;
+						break;
+					} else {
+						normalInputs.addAll(in.getInputs());
+						toBeRemoved.add(in);
+					}
+				}
+
+				if (!allInputsNegated)
+					continue;
+
+				And newAnd = new And();
+				for (Component normalIn : normalInputs) {
+					assert normalIn.getOutputs().size() == 1;
+					newAnd.addInput(normalIn);
+					normalIn.removeAllOutputs();
+					normalIn.addOutput(newAnd);
+				}
+
+				Not newNot = new Not();
+				newAnd.addOutput(newNot);
+				newNot.addInput(newAnd);
+				newNot.addOutput(c.getSingleOutput());
+
+				finalRemoved.addAll(toBeRemoved);
+				finalRemoved.add(c);
+				finalAdded.add(newAnd);
+				finalAdded.add(newNot);
+			}
+		}
+
+		if (verbose)
+			System.out.println((finalRemoved.size()-finalAdded.size())+" gates pruned.");
+		components.removeAll(finalRemoved);
+		components.addAll(finalAdded);
 	}
 
 

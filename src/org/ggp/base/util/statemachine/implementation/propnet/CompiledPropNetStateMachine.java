@@ -71,6 +71,19 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		return propNet.getProp(propNet.getTermProposition());
 	}
 
+	@Override
+	public boolean isGoalInhibitor(Role r, MachineState s) {
+		PropNetMachineState state = (PropNetMachineState)s;
+
+		boolean [] baseProps = state.getBaseProps();
+
+		for (Integer inhibitor : propNet.getInhibitors().get(r)) {
+			if (baseProps[inhibitor])
+				return true;
+		}
+		return false;
+	}
+
 	/**
 	 * Computes the goal for a role in the current state.
 	 * Should return the value of the goal proposition that

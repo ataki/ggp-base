@@ -19,6 +19,8 @@ public abstract class Component implements Serializable
     /** The outputs of the component. */
     private final Set<Component> outputs;
 
+    public static final int AMBIGUOUS = -1;
+
     /**
      * Creates a new Component with no inputs or outputs.
      */
@@ -120,6 +122,8 @@ public abstract class Component implements Serializable
      * @return The value of the Component.
      */
     public abstract boolean getValue();
+
+    public abstract int getAmbiguousValue();
 
     /**
      * Returns a representation of the Component in .dot format.

@@ -102,6 +102,10 @@ public final class PropNet
 	/** A helper list of all of the roles. */
 	private final List<Role> roles;
 
+	private final Set<Proposition> latches;
+
+	private final Map<Role,Set<Proposition>> inhibitors;
+
 	public void addComponent(Component c)
 	{
 		components.add(c);
@@ -129,6 +133,9 @@ public final class PropNet
 		this.terminalProposition = recordTerminalProposition();
 		this.legalInputMap = makeLegalInputMap();
 		this.ordering = makeOrdering();
+		this.latches = findLatches();
+		this.inhibitors = findInhibitors();
+
 	}
 
 	public List<Role> getRoles()
@@ -250,6 +257,14 @@ public final class PropNet
 
 	public List<Proposition> getOrdering() {
 		return ordering;
+	}
+
+	public Set<Proposition> getLatches() {
+		return latches;
+	}
+
+	public Map<Role,Set<Proposition>> getInhibitors() {
+		return inhibitors;
 	}
 
 	/**
@@ -618,6 +633,115 @@ public final class PropNet
 			}
 		}
 
+		System.out.println("Ordering: "+order);
 		return order;
+	}
+
+	private Set<Proposition> findLatches() {
+
+		Set<Proposition> latches = new HashSet<Proposition>();
+
+		System.out.print("Finding latches in propNet... ");
+
+		for (Proposition ip : inputPropositions.values()) {
+			ip.setAmbiguousValue(Component.AMBIGUOUS);
+		}
+
+		for (Proposition bp : basePropositions.values()) {
+			bp.setAmbiguousValue(Component.AMBIGUOUS);
+		}
+
+		for (Proposition bp : basePropositions.values()) {
+			bp.setAmbiguousValue(1);
+			for (Proposition p : ordering) {
+				p.setAmbiguousValue(p.getSingleInput().getAmbiguousValue());
+			}
+
+			bp.setAmbiguousValue(bp.getSingleInput().getAmbiguousValue());
+			if (bp.getAmbiguousValue() == 1)
+				latches.add(bp);
+
+			bp.setAmbiguousValue(0);
+			for (Proposition p : ordering) {
+				p.setAmbiguousValue(p.getSingleInput().getAmbiguousValue());
+			}
+
+			bp.setAmbiguousValue(bp.getSingleInput().getAmbiguousValue());
+			if (bp.getAmbiguousValue() == 0)
+				latches.add(bp);
+
+
+			bp.setAmbiguousValue(Component.AMBIGUOUS);
+		}
+
+		System.out.println("found "+latches.size()+" latches.");
+		System.out.println(latches);
+		return latches;
+	}
+
+	private Map<Role,Set<Proposition>> findInhibitors() {
+
+		System.out.print("Finding latch-inhibitors in propNet... ");
+
+		Map<Role,Set<Proposition>> latchInhibitors = new HashMap<Role,Set<Proposition>>();
+
+		for (Proposition ip : inputPropositions.values()) {
+			ip.setAmbiguousValue(Component.AMBIGUOUS);
+		}
+
+
+
+		for (Role r : roles) {
+			int maxGoal = 0;
+			Proposition goalProp = null;
+			Set<Proposition> roleInhibitors = new HashSet<Proposition>();
+
+			for (Proposition gp : goalPropositions.get(r)) {
+				int val = getGoalValue(gp);
+				if (val > maxGoal) {
+					maxGoal = val;
+					goalProp = gp;
+				}
+			}
+
+			for (Proposition bp : basePropositions.values()) {
+
+				for (Proposition b : basePropositions.values()) {
+					b.setAmbiguousValue(Component.AMBIGUOUS);
+				}
+
+				bp.setAmbiguousValue(1);
+				for (Proposition p : ordering) {
+					p.setAmbiguousValue(p.getSingleInput().getAmbiguousValue());
+				}
+
+				for (Proposition b : basePropositions.values()) {
+					b.setAmbiguousValue(b.getSingleInput().getAmbiguousValue());
+				}
+
+				if (goalProp.getSingleInput().getAmbiguousValue() == 0 && latches.contains(bp))
+					roleInhibitors.add(bp);
+
+			}
+
+			System.out.print("found "+roleInhibitors.size()+" inhibitors for "+r+";");
+			latchInhibitors.put(r, roleInhibitors);
+		}
+
+		System.out.println("");
+
+		return latchInhibitors;
+	}
+
+	/**
+	 * Helper method for parsing the value of a goal proposition
+	 * @param goalProposition
+	 * @return the integer value of the goal proposition
+	 */
+	private int getGoalValue(Proposition goalProposition)
+	{
+		GdlRelation relation = (GdlRelation) goalProposition.getName();
+		GdlConstant constant = (GdlConstant) relation.get(1);
+		return Integer.parseInt(constant.toString());
 	}
 }

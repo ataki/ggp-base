@@ -19,6 +19,12 @@ public final class Transition extends Component
 		return getSingleInput().getValue();
 	}
 
+	@Override
+	public int getAmbiguousValue()
+	{
+		return getSingleInput().getAmbiguousValue();
+	}
+
 	/**
 	 * @see org.ggp.base.util.propnet.architecture.Component#toString()
 	 */

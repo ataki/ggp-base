@@ -14,7 +14,7 @@ import org.ggp.base.util.gdl.grammar.GdlSentence;
 import org.ggp.base.util.propnet.architecture.Component;
 import org.ggp.base.util.propnet.architecture.PropNet;
 import org.ggp.base.util.propnet.architecture.components.Proposition;
-import org.ggp.base.util.propnet.factory.CompiledPropNetFactory;
+import org.ggp.base.util.propnet.factory.OptimizingPropNetFactory;
 import org.ggp.base.util.propnet.factory.PropNetFactory;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -85,7 +85,7 @@ public class PropNetStateMachine extends StateMachine {
 	@Override
 	public void initialize(String gameName, List<Gdl> description) {
 		try {
-			propNet = CompiledPropNetFactory.create(gameName, description,true);
+			propNet = OptimizingPropNetFactory.create(description,true);
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 			propNet = PropNetFactory.create(description);

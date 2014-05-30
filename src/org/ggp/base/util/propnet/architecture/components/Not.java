@@ -19,6 +19,17 @@ public final class Not extends Component
 		return !getSingleInput().getValue();
 	}
 
+	@Override
+	public int getAmbiguousValue()
+	{
+		int val = getSingleInput().getAmbiguousValue();
+
+		if (val == Component.AMBIGUOUS)
+			return val;
+
+		return val==1?0:1;
+	}
+
 	/**
 	 * @see org.ggp.base.util.propnet.architecture.Component#toString()
 	 */

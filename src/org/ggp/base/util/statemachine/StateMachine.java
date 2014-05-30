@@ -393,4 +393,6 @@ public abstract class StateMachine
     		avgScores[j] /= repetitions;
     	}
     }
+
+    public boolean isGoalInhibitor(Role r, MachineState s) {return false;}
 }
