@@ -83,7 +83,7 @@ public class PropNetStateMachine extends StateMachine {
 	 * your discretion.
 	 */
 	@Override
-	public void initialize(String gameName, List<Gdl> description) {
+	public boolean initialize(String gameName, List<Gdl> description) {
 		try {
 			propNet = OptimizingPropNetFactory.create(description,true);
 		} catch (InterruptedException e) {
@@ -92,6 +92,7 @@ public class PropNetStateMachine extends StateMachine {
 		}
 		roles = propNet.getRoles();
 		ordering = getOrdering();
+		return true;
 	}
 
 	/**

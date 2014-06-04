@@ -8,6 +8,7 @@ import org.ggp.base.player.gamer.exception.AbortingException;
 import org.ggp.base.player.gamer.exception.MetaGamingException;
 import org.ggp.base.player.gamer.exception.MoveSelectionException;
 import org.ggp.base.player.gamer.exception.StoppingException;
+import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlTerm;
 import org.ggp.base.util.logging.GamerLogger;
 import org.ggp.base.util.statemachine.MachineState;
@@ -51,6 +52,10 @@ public abstract class StateMachineGamer extends Gamer
      * @throws GoalDefinitionException
      */
     public abstract void stateMachineMetaGame(long timeout) throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException;
+
+    public void stateMachineMetaGame(long timeout, List<Gdl> rules) throws TransitionDefinitionException, MoveDefinitionException, GoalDefinitionException {
+    	stateMachineMetaGame(timeout);
+    }
 
     /**
      * Defines the algorithm that the player uses to select their move.
@@ -172,7 +177,7 @@ public abstract class StateMachineGamer extends Gamer
 			role = stateMachine.getRoleFromConstant(getRoleName());
 			getMatch().appendState(currentState.getContents());
 
-			stateMachineMetaGame(timeout);
+			stateMachineMetaGame(timeout, getMatch().getGame().getRules());
 		}
 		catch (Exception e)
 		{

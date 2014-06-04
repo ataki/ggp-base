@@ -42,20 +42,21 @@ public class FailsafeStateMachine extends StateMachine
     }
 
     @Override
-    public synchronized void initialize(String gameName, List<Gdl> description) {
+    public synchronized boolean initialize(String gameName, List<Gdl> description) {
         this.gameDescription = description;
         this.gameName = gameName;
 
         if(attemptLoadingInitialMachine())
-            return;
+            return true;
 
         GamerLogger.logError("StateMachine", "Failsafe Machine: failed to load initial state machine. Falling back...");
         if(attemptLoadingProverMachine())
-            return;
+            return true;
 
         GamerLogger.logError("StateMachine", "Failsafe Machine: catastrophic failure to load *any* state machine. Cannot recover.");
         GamerLogger.logError("StateMachine", "Failsafe Machine: cannot recover from current state. Shutting down.");
         theBackingMachine = null;
+        return false;
     }
 
     private void failGracefully(Exception e1, Error e2) {

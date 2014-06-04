@@ -32,8 +32,9 @@ public abstract class StateMachine
 	 * <p>
 	 * This method should only be called once, and it should be called before any
 	 * other methods on the StateMachine.
+	 * @return
 	 */
-    public abstract void initialize(String gameName, List<Gdl> description);
+    public abstract boolean initialize(String gameName, List<Gdl> description);
     /**
      * Returns the goal value for the given role in the given state. Goal values
      * are always between 0 and 100.

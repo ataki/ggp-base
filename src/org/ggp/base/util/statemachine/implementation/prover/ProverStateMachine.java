@@ -39,13 +39,14 @@ public class ProverStateMachine extends StateMachine
 	}
 
 	@Override
-	public void initialize(String gameName, List<Gdl> description)
+	public boolean initialize(String gameName, List<Gdl> description)
 	{
 		gameName = gameName;
 		gdlDescription = description;
 		prover = new AimaProver(description);
 		roles = Role.computeRoles(description);
 		initialState = computeInitialState();
+		return true;
 	}
 
 	private MachineState computeInitialState()

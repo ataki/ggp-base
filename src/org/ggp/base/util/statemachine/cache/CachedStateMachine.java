@@ -122,9 +122,9 @@ public final class CachedStateMachine extends StateMachine
 	}
 
 	@Override
-	public void initialize(String gameName, List<Gdl> description) {
+	public boolean initialize(String gameName, List<Gdl> description) {
 		ttlCache.clear();
-		backingStateMachine.initialize(gameName, description);
+		return backingStateMachine.initialize(gameName, description);
 	}
 
 	@Override

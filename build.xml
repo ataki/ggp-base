@@ -60,7 +60,8 @@
         <echo message="${ant.project.name}: ${ant.file}"/>
         <javac debug="true" debuglevel="${debuglevel}" destdir="bin" source="${source}" target="${target}">
             <src path="src"/>
-            <classpath refid="GGP_Base.classpath"/>
+        	<exclude name="org/ggp/base/util/propnet/architecture/generated/*"/>
+            <classpath refid="GGP_Base.classpath"/> 
         </javac>
         <javac debug="true" debuglevel="${debuglevel}" destdir="bin" source="${source}" target="${target}">
             <src path="src_py"/>

@@ -33,6 +33,7 @@ import org.ggp.base.player.gamer.event.GamerSelectedMoveEvent;
 import org.ggp.base.player.gamer.exception.GamePreviewException;
 import org.ggp.base.player.gamer.statemachine.StateMachineGamer;
 import org.ggp.base.util.game.Game;
+import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.logging.GamerLogger;
 import org.ggp.base.util.statemachine.MachineState;
 import org.ggp.base.util.statemachine.Move;
@@ -105,6 +106,11 @@ public class MCTSGamer extends StateMachineGamer {
 	private static final String MOVE_END = "*************** End %3d ****************";
 
 	private static MCTSConfigPanel cPanel = null;
+
+	private boolean usePropNet = false;
+	private boolean propNetReady = false;
+	private StateMachine propNetSM = null;
+	private Future<?> propNetTask = null;
 
 	private static final double INHIBITOR_PENALTY = 0.7;
 
@@ -375,6 +381,57 @@ public class MCTSGamer extends StateMachineGamer {
 	public void stateMachineMetaGame(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException,
 			GoalDefinitionException {
+		stateMachineMetaGame(timeout,null);
+	}
+
+	@Override
+	public void stateMachineMetaGame(long timeout, final List<Gdl> rules)
+			throws TransitionDefinitionException, MoveDefinitionException,
+			GoalDefinitionException {
+
+		if (usePropNet) {
+			propNetTask = chargeExecutor.submit(new Runnable() {
+				@Override
+				public void run() {
+					propNetSM = new CachedStateMachine(new CompiledPropNetStateMachine());
+					propNetReady = true;
+					try {
+						propNetReady = propNetSM.initialize(null, rules);
+					} catch (Exception e) {
+						propNetReady = false;
+					}
+				}
+			});
+		}
+
+
+		long start = System.currentTimeMillis();
+		boolean done = true;
+		try {
+			propNetTask.get(timeout-start-timeoutBuffer,TimeUnit.MILLISECONDS);
+		} catch (InterruptedException e) {
+			log("METAGAME: InterruptedException when running propNetTask");
+			propNetReady = false;
+			e.printStackTrace();
+		} catch (ExecutionException e) {
+			log("METAGAME: ExecutionException when running propNetTask");
+			propNetReady = false;
+			e.printStackTrace();
+		} catch (TimeoutException e) {
+			done = false;
+			log("METAGAME: Timed out waiting for propnet to initialize.");
+		} finally {
+			if (done) {
+				if (propNetReady) {
+					log("METAGAME: PropNet Initialized successfully.");
+					switchStateMachine(propNetSM);
+				} else {
+					log("METAGAME: Error Initalizing propNet - reverting to Prover");
+				}
+				propNetTask = null;
+			}
+		}
+
 		// TODO: Do something useful during the meta-game phase.
 		List<Role> roles = getStateMachine().getRoles();
 
@@ -411,7 +468,11 @@ public class MCTSGamer extends StateMachineGamer {
 			SM = new ProverStateMachine();
 		else if (SMToUse == SMSelection.PROPNET) {
 			numProbes = 1; // TODO: PropNet is currently not thread-safe
-			SM = new CompiledPropNetStateMachine();
+			//SM = new CompiledPropNetStateMachine();
+			SM = new ProverStateMachine();
+			propNetReady = false;
+			usePropNet = true;
+			propNetSM = null;
 		}
 
 		cPanel.updateFields();
@@ -630,6 +691,7 @@ public class MCTSGamer extends StateMachineGamer {
 
 	private Move getMove() throws TransitionDefinitionException,
 			MoveDefinitionException, GoalDefinitionException {
+
 		if (gameRoles == null)
 			gameRoles = getStateMachine().getRoles();
 
@@ -801,6 +863,17 @@ public class MCTSGamer extends StateMachineGamer {
 	public Move stateMachineSelectMove(long timeout)
 			throws TransitionDefinitionException, MoveDefinitionException,
 			GoalDefinitionException {
+
+		if (propNetTask != null && propNetTask.isDone()) {
+			if (propNetReady) {
+				log("MOVE: Switching to propNet...");
+				switchStateMachine(propNetSM);
+				propNetTask = null;
+			} else {
+				log("MOVE: PropNet creation failed, continuing to use Prover...");
+				propNetTask = null;
+			}
+		}
 
 		// We get the current start time
 		long start = System.currentTimeMillis();

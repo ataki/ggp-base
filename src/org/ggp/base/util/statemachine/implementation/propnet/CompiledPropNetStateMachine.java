@@ -44,7 +44,7 @@ public class CompiledPropNetStateMachine extends StateMachine {
 	 * your discretion.
 	 */
 	@Override
-	public void initialize(String gameName, List<Gdl> description) {
+	public boolean initialize(String gameName, List<Gdl> description) {
 
 		currentState = null;
 		roles = null;
@@ -53,8 +53,13 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		try {
 			propNet = CompiledPropNetFactory.create(gameName, description,true);
 		} catch (InterruptedException e) {
+			propNet = null;
+			System.err.println("InterruptedException when creating compiled propNet");
 			e.printStackTrace();
 		}
+
+		if (propNet == null)
+			return false;
 
 		int numPropositions = propNet.getNumProps();
 		System.out.println("Number of Propositions: "+numPropositions);
@@ -67,6 +72,8 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		numBaseProps = propNet.getBaseProps().length;
 
 		System.out.println("Compiled PropNet StateMachine Initialized Successfully");
+
+		return true;
 
 	}
 

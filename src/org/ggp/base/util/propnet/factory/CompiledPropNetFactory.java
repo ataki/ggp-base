@@ -41,15 +41,15 @@ import org.ggp.base.util.propnet.architecture.components.Transition;
 public class CompiledPropNetFactory {
 
 	private static final String FILE_HEADER = "/* WARNING: This file was automatically generated. DO NOT EDIT! */";
-	private static final String SRC_DIR = "src/org/ggp/base/util/propnet/architecture/";
+	private static final String SRC_DIR = "src/org/ggp/base/util/propnet/architecture/generated/";
 	private static final String DEST_DIR = "bin";
 
-	private static final String PACKAGE = "org.ggp.base.util.propnet.architecture";
+	private static final String PACKAGE = "org.ggp.base.util.propnet.architecture.generated";
 	private static final String PACKAGE_HEADER = "package "+PACKAGE+";";
 	private static final String INCLUDES = "import org.ggp.base.util.propnet.architecture.CompiledPropNet;\n"
 										 + "import org.ggp.base.util.propnet.architecture.PropNet;\n"
 										 + "import org.ggp.base.util.propnet.architecture.components.Proposition;\n"
-										 + "import java.util.Map;";
+					 					 + "import java.util.Map;";
 
 	private static final String UPDATE_DECL = "\tpublic void update() {";
 	private static final String UPDATE_SEGMENT_DECL = "\tprivate void update%d() {";
@@ -66,7 +66,7 @@ public class CompiledPropNetFactory {
 
 	private static final String CLASS_POSTFIX = "PropNet_%s";
 
-	private static final int SEGMENT_SIZE = 10;
+	private static final int SEGMENT_SIZE = 500;
 	private static final int UPDATE_SINGLE_SEGMENT_SIZE = SEGMENT_SIZE/2;
 
 	/**
@@ -313,6 +313,12 @@ public class CompiledPropNetFactory {
 	private static File generateSourceFile(String className, PropNet p, Map<Proposition, Integer> indexMap) throws IOException {
 
 		File propNetSrcFile = new File(SRC_DIR+className+".java");
+
+		if (!propNetSrcFile.getParentFile().exists() && !propNetSrcFile.getParentFile().mkdirs()) {
+			System.err.println("Could not create directory for generated source files: "+SRC_DIR);
+			return null;
+		}
+
 		BufferedWriter output = null;
 		try {
 			output = new BufferedWriter(new FileWriter(propNetSrcFile));
@@ -420,6 +426,8 @@ public class CompiledPropNetFactory {
 			return null;
 		}
 
+		if (srcFile == null)
+			return null;
 
 		try {
 
