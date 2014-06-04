@@ -11,6 +11,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -54,6 +55,8 @@ public class CompiledPropNetFactory {
 	private static final String UPDATE_DECL = "\tpublic void update() {";
 	private static final String UPDATE_SEGMENT_DECL = "\tprivate void update%d() {";
 	private static final String UPDATE_BASES_DECL = "\tpublic void updateBases() {";
+	private static final String UPDATE_BASES_SEGMENT_DECL = "\tpublic void updateBases%d() {";
+	private static final String UPDATE_BASES_SEGMENT_CALL = "\t\tupdateBases%d();";
 	private static final String UPDATE_SEGMENT_CALL = "\t\tupdate%d();";
 
 	private static final String PROPAGATE_DECL = "\tpublic void propagate(int propId) {";
@@ -66,7 +69,7 @@ public class CompiledPropNetFactory {
 
 	private static final String CLASS_POSTFIX = "PropNet_%s";
 
-	private static final int SEGMENT_SIZE = 500;
+	private static final int SEGMENT_SIZE = 10;
 	private static final int UPDATE_SINGLE_SEGMENT_SIZE = SEGMENT_SIZE/2;
 
 	/**
@@ -195,13 +198,37 @@ public class CompiledPropNetFactory {
 
 	private static void generateUpdateBasesFn(BufferedWriter output, PropNet p, Map<Proposition, Integer> indexMap) throws IOException {
 
-		writeLine(output, UPDATE_BASES_DECL);
+		int numSegments = generateSegmentedUpdateBasesFn(output,p,indexMap);
 
-		for (Proposition prop : p.getBasePropositions().values()) {
-			writeLine(output,generateUpdateLine(prop,indexMap));
+		writeLine(output, UPDATE_BASES_DECL);
+		for (int i = 0; i < numSegments; i++) {
+			writeLine(output,String.format(UPDATE_BASES_SEGMENT_CALL, i));
+		}
+		writeLine(output, "\t}");
+	}
+
+	private static int generateSegmentedUpdateBasesFn(BufferedWriter output,
+			PropNet p, Map<Proposition, Integer> indexMap) throws IOException {
+
+		int i = 0;
+		int numSegments = 0;
+		Collection<Proposition> ordering = p.getBasePropositions().values();
+
+		Iterator<Proposition> iter = ordering.iterator();
+
+		while (iter.hasNext()) {
+			if (i % SEGMENT_SIZE == 0) {
+				if (numSegments > 0)
+					writeLine(output, "\t}\n");
+				writeLine(output, String.format(UPDATE_BASES_SEGMENT_DECL, numSegments));
+				numSegments++;
+			}
+			writeLine(output,generateUpdateLine(iter.next(),indexMap));
+			i++;
 		}
 
-		writeLine(output, "\t}");
+		writeLine(output, "\t}\n");
+		return numSegments;
 	}
 
 	private static void generatePropagateIndFn(BufferedWriter output, Map<Proposition,Integer> indexMap, Proposition prop, PropNet p) throws IOException {

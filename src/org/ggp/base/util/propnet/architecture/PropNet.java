@@ -759,6 +759,8 @@ public final class PropNet
 	private Set<Proposition> findLatches() {
 
 		Set<Proposition> latches = new HashSet<Proposition>();
+		if (propositions.size() > 10000)
+			return latches;
 
 		System.out.print("Finding latches in propNet... ");
 
@@ -800,9 +802,12 @@ public final class PropNet
 
 	private Map<Role,Set<Proposition>> findInhibitors() {
 
-		System.out.print("Finding latch-inhibitors in propNet... ");
-
 		Map<Role,Set<Proposition>> latchInhibitors = new HashMap<Role,Set<Proposition>>();
+
+		if (propositions.size() > 10000)
+			return latchInhibitors;
+
+		System.out.print("Finding latch-inhibitors in propNet... ");
 
 		for (Proposition ip : inputPropositions.values()) {
 			ip.setAmbiguousValue(Component.AMBIGUOUS);

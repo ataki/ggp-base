@@ -62,7 +62,7 @@ public class MCTSGamer extends StateMachineGamer {
 		PROVER, PROPNET
 	};
 
-	private Long timeoutBuffer = 500L; // In milliseconds
+	private Long timeoutBuffer = 750L; // In milliseconds
 
 	// This map allows us to keep the previous updates in memory when playing a
 	// game.
@@ -114,9 +114,13 @@ public class MCTSGamer extends StateMachineGamer {
 
 	private static final double INHIBITOR_PENALTY = 0.7;
 
+	private MCTSNode currentNode;
+
+	private Future<Move> getMoveTask = null;
+
 	private class MCTSNode {
 		MachineState state;
-		int visits;
+		long visits;
 		double totalScore;
 		double opponentScore;
 		MCTSNode parent;
@@ -705,12 +709,7 @@ public class MCTSGamer extends StateMachineGamer {
 		numPrevExpansions = numExpansions;
 		numExpansions = 0;
 
-		List<Move> moves = getStateMachine().getLegalMoves(getCurrentState(),
-				getRole());
-		if (moves.size() == 1)
-			return moves.get(0);
-
-		MCTSNode currentNode = nodeMap.getIfPresent(getCurrentState());
+		currentNode = nodeMap.getIfPresent(getCurrentState());
 		if (currentNode == null) {
 			log("!!!!!!!!!!Could not find current node in node-map");
 			currentNode = new MCTSNode(getCurrentState(), null, null);
@@ -718,6 +717,11 @@ public class MCTSGamer extends StateMachineGamer {
 		}
 		currentNode.parent = null;
 		currentNode.parentMove = null;
+
+//		List<Move> moves = getStateMachine().getLegalMoves(getCurrentState(),
+//				getRole());
+//		if (moves.size() == 1)
+//			return moves.get(0);
 
 		double usedPercent = (double) (Runtime.getRuntime().totalMemory() - Runtime
 				.getRuntime().freeMemory())
@@ -793,7 +797,7 @@ public class MCTSGamer extends StateMachineGamer {
 
 	private Move getBestMove() throws MoveDefinitionException {
 
-		MCTSNode current = nodeMap.getIfPresent(getCurrentState());
+		MCTSNode current = currentNode;
 
 		Move bestMove = null;
 		double score = Double.NEGATIVE_INFINITY;
@@ -864,6 +868,9 @@ public class MCTSGamer extends StateMachineGamer {
 			throws TransitionDefinitionException, MoveDefinitionException,
 			GoalDefinitionException {
 
+		// We get the current start time
+		long start = System.currentTimeMillis();
+
 		if (propNetTask != null && propNetTask.isDone()) {
 			if (propNetReady) {
 				log("MOVE: Switching to propNet...");
@@ -875,14 +882,19 @@ public class MCTSGamer extends StateMachineGamer {
 			}
 		}
 
-		// We get the current start time
-		long start = System.currentTimeMillis();
+		List<Move> legalMoves = getStateMachine().getLegalMoves(getCurrentState(), getRole());
+
+
 
 		log(String.format(MOVE_START, numMovesMade));
-		log("TIMEOUT: " + (timeout - start));
+
+
+		if (getMoveTask != null && !getMoveTask.isDone()) {
+			log("!!!!!!!! PREVIOUS MOVE TASK STILL RUNNING !!!!!!!!!!!!");
+		}
 
 		keepRunning = true;
-		Future<Move> task = threadExecutor.submit(new Callable<Move>() {
+		getMoveTask = threadExecutor.submit(new Callable<Move>() {
 			@Override
 			public Move call() throws TransitionDefinitionException,
 					MoveDefinitionException, GoalDefinitionException {
@@ -891,13 +903,18 @@ public class MCTSGamer extends StateMachineGamer {
 		});
 
 		Move selection = null;
+		long timeStart = System.currentTimeMillis();
+		log("TIMEOUT: " + (timeout - timeStart));
 
 		try {
-			selection = task.get(timeout - start - timeoutBuffer,
+			selection = getMoveTask.get(timeout - timeStart - timeoutBuffer,
 					TimeUnit.MILLISECONDS);
 		} catch (TimeoutException e) {
 			keepRunning = false;
-			selection = getBestMove();
+			if (legalMoves.size() == 1)
+				selection = legalMoves.get(0);
+			else
+				selection = getBestMove();
 		} catch (Exception e) {
 			System.err.println("getMove() was interrupted");
 			GamerLogger.logStackTrace("GamePlayer", e);
@@ -920,8 +937,7 @@ public class MCTSGamer extends StateMachineGamer {
 		 * selection, stop and start defined in the same way as this example,
 		 * and copy-paste these two lines in your player
 		 */
-		notifyObservers(new GamerSelectedMoveEvent(getStateMachine()
-				.getLegalMoves(getCurrentState(), getRole()), selection, stop
+		notifyObservers(new GamerSelectedMoveEvent(legalMoves, selection, stop
 				- start));
 		return selection;
 	}

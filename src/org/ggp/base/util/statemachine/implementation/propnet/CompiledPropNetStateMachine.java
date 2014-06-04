@@ -63,7 +63,7 @@ public class CompiledPropNetStateMachine extends StateMachine {
 
 		int numPropositions = propNet.getNumProps();
 		System.out.println("Number of Propositions: "+numPropositions);
-		if (numPropositions > DIFFERENTIAL_THRESHOLD) {
+		if (numPropositions > DIFFERENTIAL_THRESHOLD && numPropositions < 20000) {
 			System.out.println("Using differential propagation");
 			useDifferentialPropagation = true;
 		}
