@@ -62,7 +62,7 @@ public class MCTSGamer extends StateMachineGamer {
 		PROVER, PROPNET
 	};
 
-	private Long timeoutBuffer = 750L; // In milliseconds
+	private Long timeoutBuffer = 2000L; // In milliseconds
 
 	// This map allows us to keep the previous updates in memory when playing a
 	// game.
@@ -105,7 +105,7 @@ public class MCTSGamer extends StateMachineGamer {
 	private static final String MOVE_START = "*************** Move %3d ***************";
 	private static final String MOVE_END = "*************** End %3d ****************";
 
-	private static MCTSConfigPanel cPanel = null;
+	private MCTSConfigPanel cPanel = null;
 
 	private boolean usePropNet = false;
 	private boolean propNetReady = false;
@@ -117,6 +117,8 @@ public class MCTSGamer extends StateMachineGamer {
 	private MCTSNode currentNode;
 
 	private Future<Move> getMoveTask = null;
+
+	private boolean useOpponentTurns = false;
 
 	private class MCTSNode {
 		MachineState state;
@@ -406,37 +408,35 @@ public class MCTSGamer extends StateMachineGamer {
 					}
 				}
 			});
-		}
 
-
-		long start = System.currentTimeMillis();
-		boolean done = true;
-		try {
-			propNetTask.get(timeout-start-timeoutBuffer,TimeUnit.MILLISECONDS);
-		} catch (InterruptedException e) {
-			log("METAGAME: InterruptedException when running propNetTask");
-			propNetReady = false;
-			e.printStackTrace();
-		} catch (ExecutionException e) {
-			log("METAGAME: ExecutionException when running propNetTask");
-			propNetReady = false;
-			e.printStackTrace();
-		} catch (TimeoutException e) {
-			done = false;
-			log("METAGAME: Timed out waiting for propnet to initialize.");
-		} finally {
-			if (done) {
-				if (propNetReady) {
-					log("METAGAME: PropNet Initialized successfully.");
-					switchStateMachine(propNetSM);
-				} else {
-					log("METAGAME: Error Initalizing propNet - reverting to Prover");
+			long start = System.currentTimeMillis();
+			boolean done = true;
+			try {
+				propNetTask.get(timeout-start-timeoutBuffer,TimeUnit.MILLISECONDS);
+			} catch (InterruptedException e) {
+				log("METAGAME: InterruptedException when running propNetTask");
+				propNetReady = false;
+				e.printStackTrace();
+			} catch (ExecutionException e) {
+				log("METAGAME: ExecutionException when running propNetTask");
+				propNetReady = false;
+				e.printStackTrace();
+			} catch (TimeoutException e) {
+				done = false;
+				log("METAGAME: Timed out waiting for propnet to initialize.");
+			} finally {
+				if (done) {
+					if (propNetReady) {
+						log("METAGAME: PropNet Initialized successfully.");
+						switchStateMachine(propNetSM);
+					} else {
+						log("METAGAME: Error Initalizing propNet - reverting to Prover");
+					}
+					propNetTask = null;
 				}
-				propNetTask = null;
 			}
 		}
 
-		// TODO: Do something useful during the meta-game phase.
 		List<Role> roles = getStateMachine().getRoles();
 
 		if (roles.size() > 2) {
@@ -497,30 +497,45 @@ public class MCTSGamer extends StateMachineGamer {
 		return cPanel;
 	}
 
-	@Override
-	public void stateMachineStop() {
+	private void cleanup() {
 		gameRoles = null;
 		roleIndices = null;
 		opponent = null;
+		currentNode = null;
+		keepRunning = false;
+		propNetSM = null;
+		usePropNet = false;
+		propNetReady = false;
+
+		if (propNetTask != null && !propNetTask.isDone()) {
+			propNetTask.cancel(true);
+		}
+		propNetTask = null;
+
+		if (getMoveTask != null && !getMoveTask.isDone()) {
+			getMoveTask.cancel(true);
+		}
+		getMoveTask = null;
 
 		if (nodeMap != null) {
 			nodeMap.invalidateAll();
 			nodeMap.cleanUp();
 		}
 
+		numExpansions = 0;
 		numMovesMade = 0;
+
+		System.gc();
+	}
+
+	@Override
+	public void stateMachineStop() {
+		cleanup();
 	}
 
 	@Override
 	public void stateMachineAbort() {
-		gameRoles = null;
-		roleIndices = null;
-		opponent = null;
-		if (nodeMap != null) {
-			nodeMap.invalidateAll();
-			nodeMap.cleanUp();
-		}
-		numMovesMade = 0;
+		cleanup();
 	}
 
 	@Override
@@ -739,9 +754,18 @@ public class MCTSGamer extends StateMachineGamer {
 		while (keepRunning) {
 			MCTSNode selection = select(currentNode);
 
+			if (Thread.currentThread().isInterrupted())
+				return null;
+
 			expand(selection);
 
+			if (Thread.currentThread().isInterrupted())
+				return null;
+
 			double[] scores = runDepthCharge(selection.state);
+
+			if (Thread.currentThread().isInterrupted())
+				return null;
 
 			backpropagate(selection, scores);
 
@@ -797,7 +821,12 @@ public class MCTSGamer extends StateMachineGamer {
 
 	private Move getBestMove() throws MoveDefinitionException {
 
-		MCTSNode current = currentNode;
+		MCTSNode current = nodeMap.getIfPresent(getCurrentState());
+
+		if (current == null) {
+			log("BestMove: current node is null, returning random move!!!!!!!!!!!!!");
+			return getRandomMove();
+		}
 
 		Move bestMove = null;
 		double score = Double.NEGATIVE_INFINITY;
@@ -870,11 +899,14 @@ public class MCTSGamer extends StateMachineGamer {
 
 		// We get the current start time
 		long start = System.currentTimeMillis();
+		Move selection = null;
 
 		if (propNetTask != null && propNetTask.isDone()) {
 			if (propNetReady) {
 				log("MOVE: Switching to propNet...");
 				switchStateMachine(propNetSM);
+				log("MOVE: Invalidating node-map...");
+				nodeMap.invalidateAll(); // TODO: PropNet states are not compatible with Prover states.
 				propNetTask = null;
 			} else {
 				log("MOVE: PropNet creation failed, continuing to use Prover...");
@@ -883,11 +915,27 @@ public class MCTSGamer extends StateMachineGamer {
 		}
 
 		List<Move> legalMoves = getStateMachine().getLegalMoves(getCurrentState(), getRole());
+		long buffer = timeoutBuffer;
 
 
 
 		log(String.format(MOVE_START, numMovesMade));
 
+		if (legalMoves.size() == 1) {
+			if (useOpponentTurns) {
+				buffer = 5000L;
+			} else {
+				log("Single legal move - skipping tree search.");
+				System.gc();
+				long stop = System.currentTimeMillis();
+				log(String.format(MOVE_END, numMovesMade));
+				numMovesMade++;
+				selection = legalMoves.get(0);
+				notifyObservers(new GamerSelectedMoveEvent(legalMoves, selection, stop
+						- start));
+				return selection;
+			}
+		}
 
 		if (getMoveTask != null && !getMoveTask.isDone()) {
 			log("!!!!!!!! PREVIOUS MOVE TASK STILL RUNNING !!!!!!!!!!!!");
@@ -902,15 +950,17 @@ public class MCTSGamer extends StateMachineGamer {
 			}
 		});
 
-		Move selection = null;
+
 		long timeStart = System.currentTimeMillis();
 		log("TIMEOUT: " + (timeout - timeStart));
-
+		long timeEnd = timeStart;
 		try {
-			selection = getMoveTask.get(timeout - timeStart - timeoutBuffer,
+			selection = getMoveTask.get(timeout - timeStart - buffer,
 					TimeUnit.MILLISECONDS);
 		} catch (TimeoutException e) {
+			timeEnd = System.currentTimeMillis();
 			keepRunning = false;
+			getMoveTask.cancel(true);
 			if (legalMoves.size() == 1)
 				selection = legalMoves.get(0);
 			else
@@ -924,13 +974,13 @@ public class MCTSGamer extends StateMachineGamer {
 		log("Num Expansions: " + numExpansions);
 		log("Size of Node-map: " + nodeMap.size());
 		log("Cache Stats:\n" + nodeMap.stats().toString());
-		log(String.format(MOVE_END, numMovesMade));
 
-		numMovesMade++;
 		// We get the end time
 		// It is mandatory that stop<timeout
 		long stop = System.currentTimeMillis();
-
+		log("Total: "+(stop-start)+" getMove(): "+(stop-timeStart)+" Timeout: "+(timeEnd - timeStart));
+		log(String.format(MOVE_END, numMovesMade));
+		numMovesMade++;
 		/**
 		 * These are functions used by other parts of the GGP codebase You
 		 * shouldn't worry about them, just make sure that you have moves,
