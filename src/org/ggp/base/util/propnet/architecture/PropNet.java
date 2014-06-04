@@ -4,11 +4,13 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 import org.ggp.base.util.gdl.grammar.GdlConstant;
@@ -106,6 +108,23 @@ public final class PropNet
 
 	private final Map<Role,Set<Proposition>> inhibitors;
 
+	private final Map<Proposition, List<Integer>> deltaIndices;
+
+	public Map<Proposition, List<Integer>> getDeltaIndices() {
+		return deltaIndices;
+	}
+
+	private final List<Integer> transitionalPropOrdering;
+	private final List<Proposition> transitionalProps;
+
+	public List<Integer> getTransitionalPropOrdering() {
+		return transitionalPropOrdering;
+	}
+
+	public List<Proposition> getTransitionalProps() {
+		return transitionalProps;
+	}
+
 	public void addComponent(Component c)
 	{
 		components.add(c);
@@ -121,6 +140,11 @@ public final class PropNet
 	 */
 	public PropNet(List<Role> roles, Set<Component> components)
 	{
+
+		// Populated in makeOrdering
+		this.deltaIndices = new HashMap<Proposition,List<Integer>>();
+		this.transitionalPropOrdering = new LinkedList<Integer>();
+		this.transitionalProps = new LinkedList<Proposition>();
 
 	    this.roles = roles;
 		this.components = components;
@@ -574,13 +598,10 @@ public final class PropNet
 		//c.removeAllOutputs();
 	}
 
-	public List<Proposition> makeOrdering()
+	private List<Proposition> makeOrdering()
 	{
 		// List to contain the topological ordering.
 		List<Proposition> order = new LinkedList<Proposition>();
-
-		// All of the components in the PropNet
-		List<Component> componentList = new ArrayList<Component>(components);
 
 		// All of the propositions in the PropNet.
 		List<Proposition> propositionList = new ArrayList<Proposition>(propositions);
@@ -596,6 +617,9 @@ public final class PropNet
 
 		unusedPropositions.addAll(propositionList);
 		unusedPropositions.removeAll(usedPropositions);
+
+		Map<Proposition, Integer> orderMap = new HashMap<Proposition,Integer>();
+		int orderingIndex = 0;
 
 		while(!unusedPropositions.isEmpty()) {
 
@@ -628,13 +652,108 @@ public final class PropNet
 					usedPropositions.add(unusedP);
 					unusedPropositions.remove(unusedP);
 					order.add(unusedP);
+					orderMap.put(unusedP, orderingIndex);
+					orderingIndex++;
 					break;
 				}
 			}
 		}
 
-		System.out.println("Ordering: "+order);
+		makeDeltaIndex(orderMap);
+
+		//System.out.println("Ordering: "+order);
 		return order;
+	}
+
+	private void makeDeltaIndex(Map<Proposition,Integer> orderMap) {
+		Set<Proposition> propsToProcess = new HashSet<Proposition>();
+		propsToProcess.addAll(basePropositions.values());
+
+		for (Proposition p : propositions) {
+			if (p.getName().toString().startsWith("( next (")) {
+				transitionalPropOrdering.add(orderMap.get(p));
+				transitionalProps.add(p);
+			}
+//			for (Component out : p.getOutputs()) {
+//				if (out instanceof Transition) {
+//					transitionalPropOrdering.add(orderMap.get(p));
+//					transitionalProps.add(p);
+//					break;
+//				}
+//			}
+		}
+
+		propsToProcess.addAll(transitionalProps);
+
+		boolean transitionFlag[] = new boolean[1];
+		for (Proposition p : propsToProcess) {
+			transitionFlag[0] = false;
+			Set<Proposition> dependants = getDependantPropositions(p,transitionFlag);
+			List<Integer> dependantIndices = new ArrayList<Integer>(dependants.size());
+
+			for (Proposition d : dependants) {
+				Integer depIndex = orderMap.get(d);
+				dependantIndices.add(depIndex);
+			}
+
+//			if (transitionFlag[0])
+//				transitionalProps.add(p);
+
+			Collections.sort(dependantIndices);
+			deltaIndices.put(p, dependantIndices);
+		}
+
+		propsToProcess.clear();
+		propsToProcess.addAll(inputPropositions.values());
+		for (Proposition p : propsToProcess) {
+			transitionFlag[0] = false;
+			Set<Proposition> dependants = getDependantPropositions(p,transitionFlag);
+			List<Integer> dependantIndices = new ArrayList<Integer>(dependants.size());
+
+			for (Proposition d : dependants) {
+				Integer depIndex = orderMap.get(d);
+				dependantIndices.add(depIndex);
+			}
+
+			Collections.sort(dependantIndices);
+			deltaIndices.put(p, dependantIndices);
+		}
+
+
+		System.out.println("Transitional Props: "+transitionalProps);
+	}
+
+	private Set<Proposition> getDependantPropositions(Component c, boolean [] transitionFlag) {
+		Set<Proposition> dependants = new HashSet<Proposition>();
+
+		Queue<Component> toProcess = new LinkedList<Component>();
+		Set<Component> processed = new HashSet<Component>();
+		toProcess.addAll(c.getOutputs());
+		processed.addAll(c.getOutputs());
+		processed.addAll(basePropositions.values());
+
+		while (!toProcess.isEmpty()) {
+			Component d = toProcess.poll();
+
+			if (d instanceof Proposition) {
+				dependants.add((Proposition)d);
+			}
+
+			if (d instanceof Transition) {
+				if (d.getSingleOutput() != c)
+					transitionFlag[0] = true;
+			}
+
+			for (Component out : d.getOutputs()) {
+				if (!processed.contains(out)) {
+					toProcess.add(out);
+					processed.add(out);
+				}
+			}
+
+		}
+
+		return dependants;
 	}
 
 	private Set<Proposition> findLatches() {
@@ -675,7 +794,7 @@ public final class PropNet
 		}
 
 		System.out.println("found "+latches.size()+" latches.");
-		System.out.println(latches);
+		//System.out.println(latches);
 		return latches;
 	}
 
@@ -724,11 +843,11 @@ public final class PropNet
 
 			}
 
-			System.out.print("found "+roleInhibitors.size()+" inhibitors for "+r+";");
+			//System.out.print("found "+roleInhibitors.size()+" inhibitors for "+r+";");
 			latchInhibitors.put(r, roleInhibitors);
 		}
 
-		System.out.println("");
+		System.out.println("done");
 
 		return latchInhibitors;
 	}

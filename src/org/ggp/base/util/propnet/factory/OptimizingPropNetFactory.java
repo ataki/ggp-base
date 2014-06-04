@@ -234,7 +234,7 @@ public class OptimizingPropNetFactory {
 		components = null;
 		negations = null;
 		completeComponentSet(componentSet);
-		removeExtraNots(componentSet, verbose);
+		//removeExtraNots(componentSet, verbose);
 		ConcurrencyUtils.checkForInterruption();
 		if(verbose)
 			System.out.println("Initializing propnet object...");

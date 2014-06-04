@@ -1,8 +1,12 @@
 package org.ggp.base.util.statemachine.implementation.propnet;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.ggp.base.util.gdl.grammar.Gdl;
 import org.ggp.base.util.gdl.grammar.GdlTerm;
@@ -26,7 +30,13 @@ public class CompiledPropNetStateMachine extends StateMachine {
 	/** The player roles */
 	private List<Role> roles;
 
-	private MachineState currentState = null;
+	private PropNetMachineState currentState = null;
+
+	private int numBaseProps = 0;
+
+	private final int DIFFERENTIAL_THRESHOLD = 10000;
+
+	private boolean useDifferentialPropagation = false;
 
 	/**
 	 * Initializes the PropNetStateMachine. You should compute the topological
@@ -46,7 +56,15 @@ public class CompiledPropNetStateMachine extends StateMachine {
 			e.printStackTrace();
 		}
 
+		int numPropositions = propNet.getNumProps();
+		System.out.println("Number of Propositions: "+numPropositions);
+		if (numPropositions > DIFFERENTIAL_THRESHOLD) {
+			System.out.println("Using differential propagation");
+			useDifferentialPropagation = true;
+		}
+
 		roles = propNet.getRoles();
+		numBaseProps = propNet.getBaseProps().length;
 
 		System.out.println("Compiled PropNet StateMachine Initialized Successfully");
 
@@ -62,9 +80,14 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		PropNetMachineState state = (PropNetMachineState)s;
 
 		if (!state.equals(currentState)) {
-			propNet.clear();
-			propNet.setBaseProps(state.getBaseProps());
-			propNet.update();
+			if (useDifferentialPropagation) {
+				TreeSet<Integer> seedProps = getMinIndex(state.getBaseProps(),null);
+				updateDifferential(state.getBaseProps(),seedProps,null);
+			} else {
+				propNet.clear();
+				propNet.setBaseProps(state.getBaseProps());
+				propNet.update();
+			}
 			currentState = state;
 		}
 
@@ -98,9 +121,14 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		PropNetMachineState state = (PropNetMachineState) s;
 
 		if (!state.equals(currentState)) {
-			propNet.clear();
-			propNet.setBaseProps(state.getBaseProps());
-			propNet.update();
+			if (useDifferentialPropagation) {
+				TreeSet<Integer> seedProps = getMinIndex(state.getBaseProps(),null);
+				updateDifferential(state.getBaseProps(),seedProps,null);
+			} else {
+				propNet.clear();
+				propNet.setBaseProps(state.getBaseProps());
+				propNet.update();
+			}
 			currentState = state;
 		}
 
@@ -142,6 +170,7 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		propNet.update();
 		propNet.updateBases();
 		propNet.update();
+		propNet.setFalse(propNet.getInitProposition());
 
 		currentState = new PropNetMachineState(propNet.getBaseProps());
 		return currentState;
@@ -157,9 +186,14 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		PropNetMachineState state = (PropNetMachineState)s;
 
 		if (!state.equals(currentState)) {
-			propNet.clear();
-			propNet.setBaseProps(state.getBaseProps());
-			propNet.update();
+			if (useDifferentialPropagation) {
+				TreeSet<Integer> seedProps = getMinIndex(state.getBaseProps(),null);
+				updateDifferential(state.getBaseProps(),seedProps,null);
+			} else {
+				propNet.clear();
+				propNet.setBaseProps(state.getBaseProps());
+				propNet.update();
+			}
 			currentState = state;
 		}
 
@@ -177,6 +211,59 @@ public class CompiledPropNetStateMachine extends StateMachine {
 		return legalMoves;
 	}
 
+	private TreeSet<Integer> getMinIndex(boolean [] newBaseProps, List<Integer> moves) {
+
+		Set<Integer> seedProps = new HashSet<Integer>();
+		boolean [] currentBaseProps = propNet.getBaseProps();
+
+		for (int i=0; i < numBaseProps; i++) {
+			if (newBaseProps[i] != currentBaseProps[i]) {
+				seedProps.add(i);
+			}
+		}
+
+		boolean [] inputProps = propNet.getInputProps();
+		for (int i = 0; i < inputProps.length; i++) {
+			if (inputProps[i])
+				seedProps.add(numBaseProps+i);
+		}
+
+		if (moves != null)
+			seedProps.addAll(moves);
+
+		//seedProps.addAll(propNet.getTransitionalProps());
+
+		TreeSet<Integer> propsToUpdate = new TreeSet<Integer>();
+		for (Integer prop : seedProps) {
+			propsToUpdate.addAll(propNet.getAffectedProps().get(prop));
+		}
+
+		//propsToUpdate.addAll(propNet.getTransitionalPropOrdering());
+
+		return propsToUpdate;
+	}
+
+	private void updateDifferential(boolean [] newBaseProps, TreeSet<Integer> propsToUpdate,
+			List<Integer> inputProps) {
+
+		propNet.setBaseProps(newBaseProps);
+		propNet.clearInputProps();
+
+//		for (int prop : propNet.getTransitionalProps()) {
+//			propNet.setFalse(prop);
+//		}
+
+		if (inputProps != null) {
+			for (int inputProp : inputProps) {
+				propNet.setTrue(inputProp);
+			}
+		}
+
+		while (!propsToUpdate.isEmpty()) {
+			propNet.updateSingleProp(propsToUpdate.pollFirst());
+		}
+	}
+
 	/**
 	 * Computes the next state given state and the list of moves.
 	 */
@@ -186,19 +273,53 @@ public class CompiledPropNetStateMachine extends StateMachine {
 
 		PropNetMachineState state = (PropNetMachineState) s;
 
-		propNet.clear();
-		propNet.setBaseProps(state.getBaseProps());
-
+		List<Integer> inputProps = new LinkedList<Integer>();
 		for (int i = 0; i < moves.size(); i++) {
 			Move m = moves.get(i);
 			if (m instanceof PropNetMove) {
 				PropNetMove move = (PropNetMove) m;
-				propNet.setTrue(move.getInputProp());
+				inputProps.add(move.getInputProp());
 			} else {
 				Role r = roles.get(i);
 				int idx = propNet.getInputPropMap().get(r).get(m.getContents());
-				propNet.setTrue(idx);
+				inputProps.add(idx);
 			}
+		}
+
+		if (useDifferentialPropagation) {
+			TreeSet<Integer> seedProps = getMinIndex(state.getBaseProps(),inputProps);
+
+			//System.out.println("PROPS TO BE UPDATED: "+seedProps);
+			//System.out.println("Doing differential propagation..");
+
+			updateDifferential(state.getBaseProps(),seedProps,inputProps);
+
+			//boolean [] originalBases = propNet.getBaseProps();
+			boolean [] newBases = propNet.getUpdatedBases();
+
+//			if (Arrays.equals(originalBases, propNet.getBaseProps())) {
+//				System.out.println("!!!!!!!!!!!!!!!!!!!!! NEW BASE PROPOSITIONS ARE THE SAME !!!!!!!!!!!!!!!");
+//				System.out.println("!!!!!!!!!!!!!!!!!!!!! ORIGINAL STATE: "+Arrays.toString(originalBases));
+//				System.out.println("!!!!!!!!!!!!!!!!!!!!! MOVES: "+moves.toString());
+//			} else {
+//				//System.out.println("!!!!!!!! ORIGINAL STATE: "+Arrays.toString(originalBases));
+//				//System.out.println("!!!!!!!! MOVES: "+moves.toString());
+//				//System.out.println("!!!!!!!! NEW STATE: "+Arrays.toString(propNet.getBaseProps()));
+//			}
+
+			seedProps = getMinIndex(newBases,null);
+			updateDifferential(newBases,seedProps,null);
+			//propNet.clearInputProps();
+			//propNet.update();
+			currentState = new PropNetMachineState(propNet.getBaseProps());
+			return currentState;
+		}
+
+		propNet.clear();
+		propNet.setBaseProps(state.getBaseProps());
+
+		for (int i = 0; i < inputProps.size(); i++) {
+			propNet.setTrue(inputProps.get(i));
 		}
 
 		propNet.update();

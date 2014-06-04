@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,6 +58,23 @@ public abstract class CompiledPropNet {
 
 	protected Map<Integer, GdlTerm> legalToGdlMap;
 
+	protected final Map<Integer,List<Integer>> affectedProps;
+
+	protected List<Integer> transitionalProps;
+	protected List<Integer> transitionalPropOrdering;
+
+	public List<Integer> getTransitionalProps() {
+		return transitionalProps;
+	}
+
+	public List<Integer> getTransitionalPropOrdering() {
+		return transitionalPropOrdering;
+	}
+
+	public Map<Integer, List<Integer>> getAffectedProps() {
+		return affectedProps;
+	}
+
 	public CompiledPropNet(int size, Map<Proposition, Integer> indexMap, PropNet p) {
 		network = new boolean[size];
 		this.indexMap = indexMap;
@@ -74,7 +92,28 @@ public abstract class CompiledPropNet {
 		goalValues = recordGoalValues(p);
 		latches = recordLatches(p);
 		inhibitors = recordInhibitors(p);
+		affectedProps = recordAffectedProps(p);
 
+	}
+
+	private Map<Integer, List<Integer>> recordAffectedProps(PropNet p) {
+		Map<Integer,List<Integer>> affectedProps = new HashMap<Integer,List<Integer>>();
+
+		for (Map.Entry<Proposition, List<Integer>> e : p.getDeltaIndices().entrySet()) {
+			affectedProps.put(indexMap.get(e.getKey()), e.getValue());
+		}
+
+		transitionalPropOrdering = new LinkedList<Integer>();
+		transitionalProps = new LinkedList<Integer>();
+		for (Proposition prop : p.getTransitionalProps()) {
+			transitionalProps.add(indexMap.get(prop));
+		}
+
+		for (Integer order : p.getTransitionalPropOrdering()) {
+			transitionalPropOrdering.add(order);
+		}
+
+		return affectedProps;
 	}
 
 	public void clear() {
@@ -83,6 +122,10 @@ public abstract class CompiledPropNet {
 
 	public boolean [] getBaseProps() {
 		return Arrays.copyOfRange(network, 0, baseProps.size());
+	}
+
+	public boolean [] getInputProps() {
+		return Arrays.copyOfRange(network, numBases, numBases+numInputs);
 	}
 
 	public Map<Role, List<Integer>> getGoalPropositions() {
@@ -271,6 +314,10 @@ public abstract class CompiledPropNet {
 		return legalInputs;
 	}
 
+	public void clearInputProps() {
+		Arrays.fill(network, numBases, numBases+numInputs, false);
+	}
+
 	public void setBaseProps(boolean [] bases) {
 		System.arraycopy(bases, 0, network, 0, bases.length);
 	}
@@ -279,7 +326,25 @@ public abstract class CompiledPropNet {
 		network[propIndex] = true;
 	}
 
+	public void setFalse(int propIndex) {
+		network[propIndex] = false;
+	}
+
 	public abstract void update();
 
 	public abstract void updateBases();
+
+	public abstract void updateSingleProp(int propId);
+
+	public boolean [] getUpdatedBases() {
+		boolean [] originalBases = getBaseProps();
+		updateBases();
+		boolean [] newBases = getBaseProps();
+		setBaseProps(originalBases);
+		return newBases;
+	}
+
+	public int getNumProps() {
+		return network.length;
+	}
 }
