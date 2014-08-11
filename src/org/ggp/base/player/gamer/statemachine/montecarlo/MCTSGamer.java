@@ -958,6 +958,9 @@ public class MCTSGamer extends StateMachineGamer {
 			selection = getMoveTask.get(timeout - timeStart - buffer,
 					TimeUnit.MILLISECONDS);
 		} catch (TimeoutException e) {
+            //TODO: When the system is busy, these timeouts are unreliable -
+            //seems like the only workaround is to switch to using the
+            //nano-seconds timers.
 			timeEnd = System.currentTimeMillis();
 			keepRunning = false;
 			getMoveTask.cancel(true);

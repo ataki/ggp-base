@@ -444,6 +444,10 @@ public class CompiledPropNetFactory {
 		File srcFile = null;
 		HashMap<Proposition, Integer> indexMap = getPropIndices(p);
 		String classPostfix = String.format(CLASS_POSTFIX, new SimpleDateFormat("yyyyMMdd_HHmmss").format(Calendar.getInstance().getTime()));
+
+        if (gameName == null) {
+            gameName = "Unknown";
+        }
 		String className = gameName+classPostfix;
 
 		try {
