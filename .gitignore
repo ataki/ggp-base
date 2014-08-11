@@ -1,2 +1,5 @@
 /bin
 /logs
+src/org/ggp/base/util/propnet/architecture/generated
+src/org/ggp/base/player/gamer/statemachine/legal
+
